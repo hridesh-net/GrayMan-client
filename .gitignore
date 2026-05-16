@@ -1,0 +1,67 @@
+# ── Dependencies ─────────────────────────────────────────────────────────────
+node_modules/
+
+# ── Expo / React Native ───────────────────────────────────────────────────────
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+.metro-health-check*
+
+# ── Android (generated — not source) ─────────────────────────────────────────
+/android
+.kotlin/
+
+# ── iOS — keep SwiftPM source, ignore build artefacts ────────────────────────
+# ios/GrayMan.swiftpm/**  ← tracked (all .swift + Package.swift)
+ios/GrayMan.swiftpm/.build/
+ios/GrayMan.swiftpm/.swiftpm/xcode/
+ios/GrayMan.swiftpm/DerivedData/
+xcuserdata/
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+*.moved-aside
+
+# ── Secrets / credentials ─────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.pem
+*.orig.*
+google-services.json
+GoogleService-Info.plist
+
+# ── Logs / debug ──────────────────────────────────────────────────────────────
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+*.log
+
+# ── macOS ─────────────────────────────────────────────────────────────────────
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# ── Editor / IDE ──────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── TypeScript ────────────────────────────────────────────────────────────────
+*.tsbuildinfo
+.claude/
