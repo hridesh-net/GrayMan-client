@@ -134,6 +134,7 @@ struct ProfileView: View {
 
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 28) {
+                        if isSelf { reelQueueBanner }
                         if isSelf, let banner = analysisBanner { banner }
                         profileCard
                         skillsSection
@@ -314,6 +315,52 @@ struct ProfileView: View {
             "Notifications. \(model.unreadNotifications) unread.",
             "सूचनाएँ। \(model.unreadNotifications) नई।"
         ))
+    }
+
+    // MARK: - Offline reel queue banner (own profile only)
+    //
+    // Shows the in-flight stage of the reel submission pipeline so the
+    // user knows their tap on "Submit Reel" actually did something.
+    // The flow is:
+    //   1. enqueueRawRecording → queue.pendingCount = 1
+    //   2. queue.flush: statusMessage = "Compressing reel…"
+    //   3. queue.flush: statusMessage = "Uploading reel…"
+    //   4. queue.pendingCount = 0 → backend's /reels/analysis becomes
+    //      "pending"/"processing" → analysisBanner takes over below.
+    //
+    // Reading the @Observable singleton's properties inside the view
+    // body wires SwiftUI's observation tracking automatically.
+
+    @ViewBuilder
+    private var reelQueueBanner: some View {
+        let queue = OfflineReelQueue.shared
+        if queue.pendingCount > 0 {
+            HStack(spacing: 12) {
+                ProgressView().tint(theme.accent)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(queue.statusMessage
+                         ?? theme.t("Preparing your reel…",
+                                    "आपकी रील तैयार हो रही…"))
+                        .scaledFont(size: 14, weight: .heavy, relativeTo: .subheadline)
+                        .foregroundStyle(Color.shadowGrey)
+                    Text(theme.t("Keep using the app — we'll finish in the background.",
+                                 "ऐप का इस्तेमाल जारी रखें — हम पीछे काम पूरा कर देंगे।"))
+                        .scaledFont(size: 12, relativeTo: .caption)
+                        .foregroundStyle(Color.mutedText)
+                        .multilineTextAlignment(.leading)
+                }
+                Spacer()
+            }
+            .padding(14)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(theme.accent.opacity(0.08))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(theme.accent.opacity(0.20), lineWidth: 1)
+            )
+        }
     }
 
     // MARK: - Reel analysis banner (own profile only)
@@ -1022,14 +1069,40 @@ private struct WorkHistoryEditorSheet: View {
 
     @State private var role: String = ""
     @State private var client: String = ""
-    @State private var period: String = ""
+    /// Defaults to (current month, current year) for start, and same
+    /// values for end — pickers can be edited if the user wants a
+    /// different range. "Currently here" toggles whether the end
+    /// values are sent at all.
+    @State private var startMonth: Int = Calendar.current.component(.month, from: Date())
+    @State private var startYear: Int = Calendar.current.component(.year, from: Date())
+    @State private var endMonth: Int = Calendar.current.component(.month, from: Date())
+    @State private var endYear: Int = Calendar.current.component(.year, from: Date())
+    @State private var isCurrent: Bool = true
     @State private var description: String = ""
     @State private var saving: Bool = false
     @State private var errorMessage: String?
 
+    private static let monthNames: [String] = Calendar.current.monthSymbols
+    private static let yearRange: [Int] = {
+        let now = Calendar.current.component(.year, from: Date())
+        return Array((now - 50)...now).reversed()  // newest first
+    }()
+
+    /// Compose a YYYY-MM-DD date string with day = 01. Backend stores
+    /// machine-readable date and we only ever capture month + year.
+    private func dateString(year: Int, month: Int) -> String {
+        String(format: "%04d-%02d-01", year, month)
+    }
+
     private var canSave: Bool {
-        !role.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        && !period.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        guard !role.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        // If both start AND end are entered, end must not precede start.
+        if !isCurrent {
+            let s = startYear * 100 + startMonth
+            let e = endYear * 100 + endMonth
+            if e < s { return false }
+        }
+        return true
     }
 
     var body: some View {
@@ -1068,13 +1141,28 @@ private struct WorkHistoryEditorSheet: View {
                         text: $client,
                         required: false
                     )
-                    field(
-                        label: theme.t("Period", "अवधि"),
-                        placeholder: theme.t("e.g. 2022 — Now or 2019 – 22",
-                                             "जैसे: 2022 — अब या 2019 – 22"),
-                        text: $period,
-                        required: true
+                    // Start: month + year picker. End: same, hidden when
+                    // "I currently work here" is on.
+                    monthYearRow(
+                        label: theme.t("Start", "शुरुआत"),
+                        month: $startMonth, year: $startYear,
+                        required: true,
                     )
+
+                    Toggle(isOn: $isCurrent) {
+                        Text(theme.t("I currently work here", "मैं अभी यहाँ काम करता हूँ"))
+                            .scaledFont(size: 13, weight: .semibold, relativeTo: .footnote)
+                            .foregroundStyle(Color.shadowGrey)
+                    }
+                    .tint(theme.accent)
+
+                    if !isCurrent {
+                        monthYearRow(
+                            label: theme.t("End", "समाप्ति"),
+                            month: $endMonth, year: $endYear,
+                            required: true,
+                        )
+                    }
 
                     Text(theme.t("Description", "विवरण"))
                         .scaledFont(size: 12, weight: .heavy, relativeTo: .caption2)
@@ -1141,6 +1229,64 @@ private struct WorkHistoryEditorSheet: View {
         .presentationDragIndicator(.hidden)
     }
 
+    /// Month + Year picker pair. Stored as two `Int` bindings so the
+    /// caller can compose a YYYY-MM-DD string at submit time. Uses
+    /// SwiftUI Menu pickers so the form stays compact (Wheel pickers
+    /// would dominate the sheet).
+    private func monthYearRow(
+        label: String, month: Binding<Int>, year: Binding<Int>, required: Bool,
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 4) {
+                Text(label)
+                    .scaledFont(size: 12, weight: .heavy, relativeTo: .caption2)
+                    .foregroundStyle(Color.dimText)
+                    .tracking(0.6)
+                    .textCase(.uppercase)
+                if required {
+                    Text("*").foregroundStyle(theme.accent).font(.system(size: 11, weight: .bold))
+                }
+            }
+            HStack(spacing: 10) {
+                Menu {
+                    ForEach(Array(Self.monthNames.enumerated()), id: \.offset) { idx, name in
+                        Button(name) { month.wrappedValue = idx + 1 }
+                    }
+                } label: {
+                    pickerCapsule(text: Self.monthNames[max(0, min(11, month.wrappedValue - 1))])
+                }
+                .accessibilityLabel(theme.t("Month", "महीना"))
+
+                Menu {
+                    ForEach(Self.yearRange, id: \.self) { y in
+                        Button(String(y)) { year.wrappedValue = y }
+                    }
+                } label: {
+                    pickerCapsule(text: String(year.wrappedValue))
+                }
+                .accessibilityLabel(theme.t("Year", "साल"))
+            }
+        }
+    }
+
+    private func pickerCapsule(text: String) -> some View {
+        HStack {
+            Text(text)
+                .scaledFont(size: 15, weight: .semibold, relativeTo: .body)
+                .foregroundStyle(Color.shadowGrey)
+            Spacer()
+            Image(systemName: "chevron.down")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(Color.dimText)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.soft)
+        )
+    }
+
     private func field(
         label: String, placeholder: String,
         text: Binding<String>, required: Bool
@@ -1174,22 +1320,35 @@ private struct WorkHistoryEditorSheet: View {
 
     private func save() async {
         let r = role.trimmingCharacters(in: .whitespacesAndNewlines)
-        let p = period.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !r.isEmpty, !p.isEmpty else { return }
+        guard !r.isEmpty, canSave else { return }
         saving = true
         errorMessage = nil
         defer { saving = false }
+
+        // Compose the machine-readable dates + a human-readable
+        // period_label derived from them. Backend stores all three so
+        // the UI can use whichever is convenient.
+        let startISO = dateString(year: startYear, month: startMonth)
+        let endISO: String? = isCurrent ? nil : dateString(year: endYear, month: endMonth)
+        let startLabel = "\(Self.monthNames[startMonth - 1]) \(startYear)"
+        let endLabel = isCurrent
+            ? theme.t("Now", "अब")
+            : "\(Self.monthNames[endMonth - 1]) \(endYear)"
+        let composedPeriod = "\(startLabel) — \(endLabel)"
+
         do {
             try await onSave(WorkHistoryCreateRequest(
                 role: r,
                 client: client.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     ? nil
                     : client.trimmingCharacters(in: .whitespacesAndNewlines),
-                periodLabel: p,
+                periodLabel: composedPeriod,
+                startDate: startISO,
+                endDate: endISO,
                 description: description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     ? nil
                     : description.trimmingCharacters(in: .whitespacesAndNewlines),
-                position: 0
+                position: 0,
             ))
             dismiss()
         } catch {

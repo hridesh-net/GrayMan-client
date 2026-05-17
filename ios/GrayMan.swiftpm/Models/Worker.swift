@@ -20,6 +20,14 @@ struct Worker: Identifiable, Hashable, Sendable {
     let gradientEndHex: String
     let isVerified: Bool              // reel-verified profile badge
     let avatarURL: String?            // optional profile picture (S3 public URL)
+    // ---- Playback ----------------------------------------------------------
+    // `reelPlaybackURL` is what AVPlayer should open — HLS master playlist
+    // when the transcoder has produced one, else the raw upload URL as a
+    // pre-transcode fallback. `reelThumbnailURL` is the first-frame JPEG
+    // used as a poster image while the HLS stream warms up.
+    let reelPlaybackURL: String?
+    let reelThumbnailURL: String?
+    let reelDurationSeconds: Double?
 }
 
 extension Worker {

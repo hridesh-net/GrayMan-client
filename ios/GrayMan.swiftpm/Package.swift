@@ -8,7 +8,7 @@ import PackageDescription
 import AppleProductTypes
 
 let package = Package(
-    name: "Sthapna",
+    name: "sthapna.ai",
     platforms: [
         .iOS("26.0")
     ],
@@ -16,14 +16,11 @@ let package = Package(
         .iOSApplication(
             name: "sthapna.ai",
             targets: ["AppModule"],
-            // Bundle identifier is intentionally kept on the legacy value so
-            // existing installs keep their Keychain JWT + UserDefaults state.
-            // Renaming it would log every existing user out on next deploy.
             bundleIdentifier: "com.grayman.app",
             teamIdentifier: "HHZ5J8ZBRX",
             displayVersion: "1.0",
             bundleVersion: "1",
-            appIcon: .placeholder(icon: .cloud),
+            appIcon: .placeholder(icon: .checkmark),
             accentColor: .presetColor(.orange),
             supportedDeviceFamilies: [
                 .phone

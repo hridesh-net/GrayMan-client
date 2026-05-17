@@ -19,6 +19,8 @@ struct GiveVouchSheet: View {
     @State private var submitted = false
     @State private var submitting = false
     @State private var submitError: String? = nil
+    /// Set to true when the server responds 403 — hire not yet completed.
+    @State private var hireGateBlocked = false
 
     private var relationships: [String] {
         [
@@ -36,7 +38,9 @@ struct GiveVouchSheet: View {
                 .padding(.top, 10)
                 .padding(.bottom, 16)
 
-            if submitted {
+            if hireGateBlocked {
+                hireGateView
+            } else if submitted {
                 successView
             } else {
                 ScrollView(showsIndicators: false) {
@@ -288,12 +292,86 @@ struct GiveVouchSheet: View {
                 )
                 submitted = true
             } catch APIError.server(409, _) {
-                // Already vouched — treat as success so the UX still feels
-                // celebratory; the receiver score stays the same.
                 submitted = true
+            } catch APIError.server(403, _) {
+                hireGateBlocked = true
             } catch {
                 submitError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             }
+        }
+    }
+
+    // MARK: - Hire gate (403 from server)
+    //
+    // Shown when the user tries to vouch without a completed hire.
+    // Rules (enforced on both client and server):
+    //   • No hire at all → blocked
+    //   • Hire requested or accepted but not yet completed → blocked
+    //   • Hire cancelled (at any stage) → blocked; cancellation voids the path
+    //   • Hire completed → vouch allowed
+
+    private var hireGateView: some View {
+        VStack(spacing: 20) {
+            Spacer()
+            ZStack {
+                Circle()
+                    .fill(Color(hex: "#E63946").opacity(0.10))
+                    .frame(width: 88, height: 88)
+                Image(systemName: "lock.fill")
+                    .font(.system(size: 34, weight: .bold))
+                    .foregroundStyle(Color(hex: "#E63946"))
+            }
+            .accessibilityHidden(true)
+
+            Text(theme.t("Hire First, Then Vouch", "पहले Hire करें, फिर Vouch दें"))
+                .scaledFont(size: 22, weight: .heavy, relativeTo: .title2)
+                .foregroundStyle(Color.shadowGrey)
+                .multilineTextAlignment(.center)
+
+            VStack(alignment: .leading, spacing: 10) {
+                ruleRow(icon: "checkmark.circle.fill", tint: Color(hex: "#2D6A4F"),
+                        text: theme.t("Hire \(worker.name.components(separatedBy: " ").first ?? worker.name) for a job",
+                                      "\(worker.name.components(separatedBy: " ").first ?? worker.name) को Hire करें"))
+                ruleRow(icon: "checkmark.circle.fill", tint: Color(hex: "#2D6A4F"),
+                        text: theme.t("Mark the job as Completed",
+                                      "काम पूरा होने पर Complete करें"))
+                ruleRow(icon: "xmark.circle.fill", tint: Color(hex: "#E63946"),
+                        text: theme.t("Cancelled hires don't qualify",
+                                      "Cancel किए गए Hire से Vouch नहीं मिलता"))
+            }
+            .padding(.horizontal, 28)
+
+            Text(theme.t("Vouches only count when earned on real, completed jobs.",
+                         "Vouch तभी मान्य है जब काम सच में हुआ हो।"))
+                .scaledFont(size: 13, relativeTo: .footnote)
+                .foregroundStyle(Color.mutedText)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
+
+            Spacer()
+            Button { dismiss() } label: {
+                Text(theme.t("Got it", "समझ गया"))
+                    .scaledFont(size: 16, weight: .bold, relativeTo: .headline)
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 17)
+                    .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(theme.accent))
+            }
+            .buttonStyle(PressScaleStyle())
+            .padding(.horizontal, 24)
+            .padding(.bottom, 36)
+        }
+    }
+
+    private func ruleRow(icon: String, tint: Color, text: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 18))
+                .foregroundStyle(tint)
+                .accessibilityHidden(true)
+            Text(text)
+                .scaledFont(size: 14, relativeTo: .body)
+                .foregroundStyle(Color.shadowGrey)
         }
     }
 

@@ -97,6 +97,21 @@ final class AVRecordingService: NSObject, RecordingService {
             throw RecordingError.configurationFailed(reason: "couldn't attach movie output")
         }
         session.addOutput(output)
+
+        // The front camera sensor is mounted in landscape, so without an
+        // explicit rotation the saved .mov is landscape-encoded — AVPlayer
+        // then renders the reel sideways. Force the connection to portrait
+        // (90°) so the recorded file matches the live preview.
+        //
+        // iOS 17+ uses `videoRotationAngle` (a CGFloat in degrees). The
+        // older `videoOrientation` API is deprecated but still works; we
+        // only need the modern path since the project's deployment target
+        // is iOS 26.
+        if let connection = output.connection(with: .video),
+           connection.isVideoRotationAngleSupported(90) {
+            connection.videoRotationAngle = 90
+        }
+
         configured = true
     }
 
@@ -118,6 +133,17 @@ final class AVRecordingService: NSObject, RecordingService {
     func startRecording() async throws {
         guard permission == .granted else { throw RecordingError.permissionDenied }
         guard !output.isRecording else { return }
+
+        // Defensive: re-pin the connection's rotation just before
+        // recording starts. The angle was already set in
+        // `configureIfNeeded` but other system events (a phone call
+        // interrupt, a reconfigured session) can reset connection
+        // state. Safer to write it twice than to ship a sideways file.
+        if let connection = output.connection(with: .video),
+           connection.isVideoRotationAngleSupported(90) {
+            connection.videoRotationAngle = 90
+        }
+
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("grayman-reel-\(UUID().uuidString).mov")
         output.startRecording(to: url, recordingDelegate: self)

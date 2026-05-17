@@ -40,6 +40,7 @@ struct HomeView: View {
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 22) {
                         greetingBlock
+                        offlineQueueBanner
                         statsCard
                         feedSection
                     }
@@ -115,6 +116,77 @@ struct HomeView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // MARK: - Offline reel queue banner
+    //
+    // Visible only when at least one reel is waiting for upload (poor
+    // network during submission, or a flaky retry). Tapping forces a
+    // manual flush — `OfflineReelQueue` already retries automatically
+    // when NWPathMonitor reports connectivity, so the button is just a
+    // user-facing "try right now" affordance.
+
+    @ViewBuilder
+    private var offlineQueueBanner: some View {
+        // Reading `pendingCount` / `isFlushing` from the @Observable
+        // singleton inside the view body causes SwiftUI to subscribe
+        // automatically, so the banner appears + dismisses without
+        // any explicit observation wiring.
+        let queue = OfflineReelQueue.shared
+        if queue.pendingCount > 0 {
+            Button {
+                Task { await queue.flush() }
+            } label: {
+                HStack(spacing: 12) {
+                    if queue.isFlushing {
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(theme.accent)
+                            .frame(width: 18, height: 18)
+                    } else {
+                        Image(systemName: "icloud.and.arrow.up.fill")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(theme.accent)
+                            .frame(width: 18, height: 18)
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(queue.pendingCount == 1
+                             ? theme.t("1 reel waiting to upload",
+                                       "1 रील अपलोड के लिए तैयार")
+                             : theme.t("\(queue.pendingCount) reels waiting to upload",
+                                       "\(queue.pendingCount) रील अपलोड के लिए तैयार"))
+                            .scaledFont(size: 13, weight: .heavy, relativeTo: .footnote)
+                            .foregroundStyle(Color.shadowGrey)
+                        Text(queue.isFlushing
+                             ? theme.t("Uploading now…", "अभी अपलोड हो रहा…")
+                             : theme.t("Will retry automatically when you're online. Tap to try now.",
+                                       "ऑनलाइन होते ही फिर कोशिश। अभी आज़माने के लिए दबाइए।"))
+                            .scaledFont(size: 11, relativeTo: .caption2)
+                            .foregroundStyle(Color.mutedText)
+                            .multilineTextAlignment(.leading)
+                    }
+                    Spacer()
+                }
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(theme.accent.opacity(0.08))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(theme.accent.opacity(0.20), lineWidth: 1)
+                )
+            }
+            .buttonStyle(PressScaleStyle(scale: 0.98))
+            .disabled(queue.isFlushing)
+            .accessibilityLabel(
+                queue.pendingCount == 1
+                ? theme.t("1 reel waiting to upload. Tap to retry.",
+                          "1 रील अपलोड बाक़ी। फिर कोशिश के लिए दबाइए।")
+                : theme.t("\(queue.pendingCount) reels waiting to upload. Tap to retry.",
+                          "\(queue.pendingCount) रील अपलोड बाक़ी। फिर कोशिश के लिए दबाइए।")
+            )
+        }
     }
 
     // MARK: - Stats card
