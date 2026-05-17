@@ -5,6 +5,28 @@ const GRADIENTS = [
   '#2D6A4F', '#E85D04', '#5C4D7D',
 ];
 
+/** Mirrors iOS WorkerDTO TradeStyle.forTrade — explore card visuals. */
+function tradeStyle(trade = '') {
+  const lower = trade.toLowerCase();
+  if (lower.includes('electric')) return { emoji: '⚡', gradientStartHex: '#0c1829' };
+  if (lower.includes('plumb')) return { emoji: '🔧', gradientStartHex: '#081420' };
+  if (lower.includes('hvac') || lower.includes('ac ')) return { emoji: '❄️', gradientStartHex: '#061a0e' };
+  if (lower.includes('interior') || lower.includes('decorator')) return { emoji: '🎨', gradientStartHex: '#1e0f05' };
+  if (lower.includes('weld')) return { emoji: '🔥', gradientStartHex: '#1a0800' };
+  if (lower.includes('nurse')) return { emoji: '🏥', gradientStartHex: '#0e0718' };
+  if (lower.includes('carpenter')) return { emoji: '🪚', gradientStartHex: '#1a0f00' };
+  if (lower.includes('paint')) return { emoji: '🎨', gradientStartHex: '#0a0a1e' };
+  if (lower.includes('mason')) return { emoji: '🧱', gradientStartHex: '#1f1208' };
+  if (lower.includes('cook')) return { emoji: '🍳', gradientStartHex: '#1c0a00' };
+  if (lower.includes('driver')) return { emoji: '🚗', gradientStartHex: '#0a0a0a' };
+  if (lower.includes('guard') || lower.includes('security')) return { emoji: '🛡️', gradientStartHex: '#0a0a14' };
+  if (lower.includes('tailor')) return { emoji: '🧵', gradientStartHex: '#160a14' };
+  if (lower.includes('garden')) return { emoji: '🌿', gradientStartHex: '#0a1c0a' };
+  if (lower.includes('appliance') || lower.includes('repair')) return { emoji: '🔌', gradientStartHex: '#0a141a' };
+  if (lower.includes('mechanic')) return { emoji: '🔩', gradientStartHex: '#0a0a0a' };
+  return { emoji: '🛠️', gradientStartHex: '#161616' };
+}
+
 function hashId(id) {
   let h = 0;
   for (let i = 0; i < (id || '').length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
@@ -43,6 +65,7 @@ export function workerFromDTO(dto, userLat, userLng) {
   const tradeLine = years
     ? `${dto.trade} · ${years} yrs exp`
     : dto.trade;
+  const style = tradeStyle(dto.trade || dto.extracted_trade || '');
 
   return {
     id: dto.id,
@@ -61,12 +84,15 @@ export function workerFromDTO(dto, userLat, userLng) {
     vouched: vouch,
     tags: dto.skill_tags || [],
     verifiedTagIndices: new Set(dto.verified_tag_indices || []),
+    emoji: style.emoji,
+    gradientStartHex: style.gradientStartHex,
     gradientEndHex: GRADIENTS[hashId(dto.id) % GRADIENTS.length],
     initials: initials(dto.name),
     distance: dist != null ? dist.toFixed(1) : '—',
     avatarUrl: dto.avatar_url,
     reelUrl: dto.reel_url,
     reelHlsUrl: dto.reel_hls_url,
+    playbackUrl: dto.playback_url,
     isVerified: dto.is_verified ?? false,
     analysisStatus: dto.analysis_status,
     extractedTrade: dto.extracted_trade,

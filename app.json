@@ -58,7 +58,9 @@
         {
           "photosPermission": "Add proof-of-work photos to your profile."
         }
-      ]
+      ],
+      "expo-audio",
+      "expo-video"
     ],
     "web": {
       "favicon": "./assets/favicon.png"

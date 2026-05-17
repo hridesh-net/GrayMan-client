@@ -2,7 +2,11 @@
  * Backend-mediated Gemini Live interview WebSocket.
  * Mirrors iOS InterviewSession.swift wire protocol.
  */
-import { Audio } from 'expo-av';
+import AudioModule, {
+  RecordingPresets,
+  setAudioModeAsync,
+  requestRecordingPermissionsAsync,
+} from 'expo-audio';
 import { wsURL } from '../api/config';
 
 const INPUT_RATE = 16000;
@@ -56,16 +60,15 @@ export class InterviewSession {
 
   async _onOpen() {
     try {
-      await Audio.requestPermissionsAsync();
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-        playThroughEarpieceAndroid: false,
-        staysActiveInBackground: false,
+      await requestRecordingPermissionsAsync();
+      await setAudioModeAsync({
+        allowsRecording: true,
+        playsInSilentMode: true,
+        shouldPlayInBackground: false,
       });
       this._setState('listening');
       // Note: full 16kHz PCM streaming requires a native module on RN.
-      // For Android MVP we use expo-av chunked recording and send base64 blobs.
+      // For Android MVP we use expo-audio chunked recording and send base64 blobs.
       this._startChunkedCapture();
     } catch (e) {
       this._setState('failed');
@@ -74,18 +77,17 @@ export class InterviewSession {
   }
 
   async _startChunkedCapture() {
-    const { recording } = await Audio.Recording.createAsync(
-      Audio.RecordingOptionsPresets.HIGH_QUALITY,
-    );
-    this.recording = recording;
+    this.recording = new AudioModule.AudioRecorder(RecordingPresets.HIGH_QUALITY);
+    await this.recording.prepareToRecordAsync();
+    this.recording.record();
     this._captureInterval = setInterval(async () => {
       if (!this.recording || this.state !== 'listening' && this.state !== 'speaking') return;
       try {
-        const uri = this.recording.getURI();
+        const uri = this.recording.uri;
         if (!uri) return;
         // Send end marker pattern: client sends periodic audio via file read
         // Production: use react-native-live-audio-stream for true PCM16 16kHz
-        const status = await this.recording.getStatusAsync();
+        const status = this.recording.getStatus();
         if (status.isRecording) {
           // Placeholder: backend VAD still works with less frequent chunks on dev
         }
@@ -146,7 +148,7 @@ export class InterviewSession {
   }
 
   async _playPCMBase64(b64) {
-    // expo-av cannot play raw PCM directly without WAV header wrapping.
+    // expo-audio cannot play raw PCM directly without WAV header wrapping.
     // iOS uses AVAudioEngine; for RN Android use TTS fallback on text frames
     // or integrate react-native-audio-api in a follow-up.
     this._setState('speaking');
@@ -159,7 +161,7 @@ export class InterviewSession {
     clearInterval(this._captureInterval);
     if (this.recording) {
       try {
-        await this.recording.stopAndUnloadAsync();
+        await this.recording.stop();
       } catch { /* ignore */ }
       this.recording = null;
     }

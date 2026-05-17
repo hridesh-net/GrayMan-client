@@ -1,26 +1,34 @@
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { workerService } from '../api/workerService';
 
 const PART_SIZE = 5 * 1024 * 1024; // 5 MB
 const MAX_PARALLEL = 3;
 
+/** MIME for camera capture (Android → mp4, iOS Expo → often .mov). */
+function contentTypeForUri(uri) {
+  const path = uri.split('?')[0].toLowerCase();
+  if (path.endsWith('.mov')) return 'video/quicktime';
+  return 'video/mp4';
+}
+
 /**
  * Multipart reel upload — mirrors iOS ReelUploader.
- * @param {string} fileUri - local video file URI
+ * @param {string} fileUri - local video file URI (front-camera capture)
  * @param {string|null} transcript
  * @param {(pct: number) => void} onProgress
  */
 export async function uploadReel(fileUri, transcript = null, onProgress = () => {}) {
   const info = await FileSystem.getInfoAsync(fileUri);
-  if (!info.exists) throw new Error('Video file not found');
+  if (!info.exists) throw new Error('Recorded reel file not found');
 
+  const contentType = contentTypeForUri(fileUri);
   const base64 = await FileSystem.readAsStringAsync(fileUri, {
     encoding: FileSystem.EncodingType.Base64,
   });
   const binary = base64ToUint8Array(base64);
   const partCount = Math.max(1, Math.ceil(binary.length / PART_SIZE));
 
-  const init = await workerService.initMultipartUpload(partCount, 'video/mp4');
+  const init = await workerService.initMultipartUpload(partCount, contentType);
   const { key, upload_id: uploadId, part_urls: partUrls } = init;
 
   try {
@@ -35,7 +43,7 @@ export async function uploadReel(fileUri, transcript = null, onProgress = () => 
         const chunk = binary.slice(start, Math.min(start + PART_SIZE, binary.length));
         const presigned = partUrls.find(p => p.part_number === partNumber) || partUrls[i];
         tasks.push(
-          uploadPart(presigned.url, chunk, 'video/mp4').then(etag => {
+          uploadPart(presigned.url, chunk, contentType).then(etag => {
             completed.push({ part_number: partNumber, etag });
             done += 1;
             onProgress(Math.round((done / partCount) * 100));

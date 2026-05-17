@@ -22,7 +22,7 @@ import PressScale from '../src/components/PressScale';
 import { AllCategories } from '../src/workers';
 import { workerService } from '../src/api/workerService';
 import { Colors } from '../src/theme';
-import { locationService } from '../src/services/locationService';
+import ExploreReelPlayer, { explorePlaybackSource } from '../src/components/ExploreReelPlayer';
 
 const { width: SW } = Dimensions.get('window');
 
@@ -146,6 +146,14 @@ export default function ExploreScreen({ onBack, onViewProfile, onGoProfile }) {
 
   useEffect(() => { loadFeed(); }, [loadFeed]);
 
+  // Guard against out-of-range index (e.g. after stale swipe state).
+  useEffect(() => {
+    if (workers.length === 0) return;
+    if (currentIndex < 0 || currentIndex >= workers.length) {
+      setCurrentIndex(0);
+    }
+  }, [workers.length, currentIndex]);
+
   const worker = workers[currentIndex] ?? null;
 
   useEffect(() => {
@@ -160,6 +168,10 @@ export default function ExploreScreen({ onBack, onViewProfile, onGoProfile }) {
   const saved  = snap?.has_saved  ?? false;
   const vouched = snap?.has_vouched ?? false;
 
+  // PanResponder is created once — keep workers length in a ref (stale closure fix).
+  const workersRef = useRef(workers);
+  workersRef.current = workers;
+
   // ─── Swipe gesture (vertical) ────────────────────────────────────────────────
 
   const panRef = useRef(
@@ -168,8 +180,13 @@ export default function ExploreScreen({ onBack, onViewProfile, onGoProfile }) {
       onMoveShouldSetPanResponder: (_, gs) =>
         Math.abs(gs.dy) > Math.abs(gs.dx) && Math.abs(gs.dy) > 12,
       onPanResponderRelease: (_, gs) => {
-        if (gs.dy < -50) setCurrentIndex(i => Math.min(i + 1, workers.length - 1));
-        else if (gs.dy > 50) setCurrentIndex(i => Math.max(i - 1, 0));
+        const count = workersRef.current.length;
+        if (count === 0) return;
+        if (gs.dy < -50) {
+          setCurrentIndex(i => Math.min(i + 1, count - 1));
+        } else if (gs.dy > 50) {
+          setCurrentIndex(i => Math.max(i - 1, 0));
+        }
       },
     }),
   ).current;
@@ -182,13 +199,22 @@ export default function ExploreScreen({ onBack, onViewProfile, onGoProfile }) {
   const bgColors = worker
     ? [worker.gradientStartHex || '#1a1a2e', worker.gradientEndHex || '#16213e']
     : ['#111111', '#111111'];
+  const hasReelVideo = worker && !!explorePlaybackSource(worker);
 
   return (
     <View style={s.root}>
       <StatusBar style="light" />
 
-      {/* Background gradient — animates between workers */}
-      <LinearGradient colors={bgColors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+      {/* Reel video (when URL available) or gradient fallback */}
+      {hasReelVideo ? (
+        <ExploreReelPlayer worker={worker} />
+      ) : (
+        <LinearGradient colors={bgColors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+      )}
+
+      {hasReelVideo && (
+        <View style={[StyleSheet.absoluteFill, s.videoScrim]} pointerEvents="none" />
+      )}
 
       {/* Vignette overlay (top dark → clear → clear → bottom dark) */}
       <LinearGradient
@@ -210,8 +236,8 @@ export default function ExploreScreen({ onBack, onViewProfile, onGoProfile }) {
             {/* Progress dots */}
             <View style={s.progressContainer}>
               {workers.length > 0 ? (
-                workers.map((_, i) => (
-                  <Pressable key={i} onPress={() => setCurrentIndex(i)}>
+                workers.map((w, i) => (
+                  <Pressable key={w.id ?? i} onPress={() => setCurrentIndex(i)}>
                     <View style={[
                       s.progressDot,
                       i === currentIndex && { backgroundColor: '#fff', width: 22, borderRadius: 3 },
@@ -295,11 +321,13 @@ export default function ExploreScreen({ onBack, onViewProfile, onGoProfile }) {
         ) : (
           /* Wrap in View with panHandlers for vertical swipe */
           <View style={s.workerArea} {...panRef.panHandlers}>
-            {/* Avatar block (center) */}
+            {/* Avatar / vouch — emoji fallback when no reel video */}
             <View style={s.avatarBlock}>
-              <View style={s.avatarCircle}>
-                <Text style={s.avatarEmoji}>{worker.emoji}</Text>
-              </View>
+              {!hasReelVideo && (
+                <View style={s.avatarCircle}>
+                  <Text style={s.avatarEmoji}>{worker.emoji}</Text>
+                </View>
+              )}
               <View style={s.vouchBadge}>
                 <Text style={s.vouchStar}>★</Text>
                 <Text style={s.vouchText}>{worker.vouchScore ?? 0} Vouched</Text>
@@ -430,6 +458,7 @@ export default function ExploreScreen({ onBack, onViewProfile, onGoProfile }) {
 
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#000' },
+  videoScrim: { backgroundColor: 'rgba(0,0,0,0.28)' },
 
   // Top controls
   topContainer: { paddingTop: 6 },
