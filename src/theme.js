@@ -47,3 +47,41 @@ export const Shadow = {
     elevation: 6,
   },
 };
+
+export const hexToRgba = (hex, a) => {
+  if (!hex) return `rgba(0,0,0,${a})`;
+  let cleanHex = hex.replace('#', '');
+  if (cleanHex.length === 3) cleanHex = cleanHex.split('').map(c => c + c).join('');
+  const r = parseInt(cleanHex.slice(0, 2), 16);
+  const g = parseInt(cleanHex.slice(2, 4), 16);
+  const b = parseInt(cleanHex.slice(4, 6), 16);
+  return `rgba(${r},${g},${b},${a})`;
+};
+
+export const Glass = {
+  // Matches iOS .glassEffect(.regular) — white frosted card
+  regular: {
+    intensity: 60,
+    tint: 'light',
+    backgroundColor: 'rgba(255,255,255,0.82)',
+    borderColor: 'rgba(255,255,255,0.92)',
+    borderWidth: 1,
+  },
+  // Common for profile cards, etc.
+  light: {
+    backgroundColor: 'rgba(255,255,255,0.88)',
+    borderColor: 'rgba(255,255,255,0.95)',
+    borderWidth: 1,
+  },
+  dark: {
+    backgroundColor: 'rgba(0,0,0,0.07)',
+    borderColor: 'rgba(0,0,0,0.10)',
+    borderWidth: 1,
+  },
+  deep: {
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderColor: 'rgba(255,255,255,0.20)',
+    borderWidth: 1,
+  }
+};
+

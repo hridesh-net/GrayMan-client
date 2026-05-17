@@ -15,7 +15,7 @@ import { useTheme } from '../src/AppTheme';
 import Blobs from '../src/components/Blobs';
 import PressScale from '../src/components/PressScale';
 import { workerService } from '../src/api/workerService';
-import { Colors, Shadow } from '../src/theme';
+import { Colors } from '../src/theme';
 
 export default function NameEntryScreen({ goBack, goNext }) {
   const { accent, t } = useTheme();
@@ -44,9 +44,8 @@ export default function NameEntryScreen({ goBack, goNext }) {
   return (
     <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
       <StatusBar style="dark" />
-      <Blobs accent={accent} opacity={0.5} />
+      <Blobs accent={accent} opacity={0.6} />
 
-      {/* Back button */}
       <View style={styles.header}>
         <PressScale onPress={goBack} style={styles.backBtn}>
           <Text style={styles.backArrow}>←</Text>
@@ -59,55 +58,62 @@ export default function NameEntryScreen({ goBack, goNext }) {
         keyboardVerticalOffset={0}
       >
         <View style={styles.content}>
-          {/* Heading */}
-          <Text style={styles.heading}>
-            {t("What should\nwe call you?", "आपको क्या\nबुलाएं?")}
-          </Text>
-
-          {/* Subtext */}
-          <Text style={styles.subtext}>
-            {t(
-              'This will appear on your work profile',
-              'यह आपकी वर्क प्रोफ़ाइल पर दिखेगा',
-            )}
-          </Text>
-
-          {/* Name input */}
-          <TextInput
-            style={styles.nameInput}
-            value={name}
-            onChangeText={setName}
-            placeholder={t('Your full name', 'आपका पूरा नाम')}
-            placeholderTextColor={Colors.dimText}
-            autoFocus
-            autoCapitalize="words"
-            returnKeyType="done"
-            onSubmitEditing={submit}
-          />
-          {error ? <Text style={styles.errorText}>{error}</Text> : null}
-
-          {/* Feedback */}
-          {isValid && (
-            <Text style={[styles.feedbackText, { color: accent }]}>
-              {`✓ ${t('Looks great', 'बढ़िया है')}, ${firstName}!`}
+          <View style={styles.headlineGroup}>
+            <Text style={styles.heading}>
+              {t("What should\nwe call you?", "आपको क्या\nबुलाएं?")}
             </Text>
-          )}
+            <Text style={styles.subtext}>
+              {t(
+                'This will appear on your work profile',
+                'यह आपकी वर्क प्रोफ़ाइल पर दिखेगा',
+              )}
+            </Text>
+          </View>
+
+          <View style={{ paddingHorizontal: 28 }}>
+            <View style={[styles.inputWrapper, isValid && { borderColor: accent }]}>
+              <TextInput
+                style={styles.nameInput}
+                value={name}
+                onChangeText={setName}
+                placeholder={t('Your full name', 'आपका पूरा नाम')}
+                placeholderTextColor={Colors.dimText}
+                autoFocus
+                autoCapitalize="words"
+                returnKeyType="done"
+                onSubmitEditing={submit}
+              />
+            </View>
+
+            {isValid && (
+              <View style={styles.feedbackRow}>
+                <View style={[styles.feedbackDot, { backgroundColor: accent }]} />
+                <Text style={[styles.feedbackText, { color: accent }]}>
+                  {t(`Looks great, ${firstName}!`, `बहुत अच्छा, ${firstName}!`)}
+                </Text>
+              </View>
+            )}
+            {error ? <Text style={styles.errorText}>{error}</Text> : null}
+          </View>
         </View>
 
-        {/* Bottom CTA */}
         <View style={styles.bottomSection}>
           <PressScale
             onPress={submit}
             disabled={!isValid || loading}
             style={[
               styles.continueBtn,
-              { backgroundColor: accent, shadowColor: accent },
-              (!isValid || loading) && styles.continueBtnDisabled,
+              { backgroundColor: isValid ? accent : Colors.soft },
+              isValid && { shadowColor: accent, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.36, shadowRadius: 12 },
             ]}
           >
-            <Text style={styles.continueBtnText}>
-              {t('Continue', 'जारी रखें')}
-            </Text>
+            {loading ? (
+              <ActivityIndicator color={isValid ? '#fff' : Colors.dimText} />
+            ) : (
+              <Text style={[styles.continueBtnText, { color: isValid ? '#fff' : Colors.dimText }]}>
+                {t('Continue', 'जारी रखें')}
+              </Text>
+            )}
           </PressScale>
         </View>
       </KeyboardAvoidingView>
@@ -124,71 +130,87 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
-    paddingHorizontal: 20,
+    paddingHorizontal: 22,
     paddingTop: 8,
-    paddingBottom: 4,
   },
   backBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
+    width: 40,
+    height: 40,
+    borderRadius: 14,
     backgroundColor: Colors.soft,
     alignItems: 'center',
     justifyContent: 'center',
   },
   backArrow: {
-    fontSize: 18,
+    fontSize: 16,
     color: Colors.shadowGrey,
-    fontWeight: '600',
+    fontWeight: 'bold',
   },
   content: {
     flex: 1,
-    paddingHorizontal: 24,
-    paddingTop: 24,
+  },
+  headlineGroup: {
+    paddingHorizontal: 28,
+    paddingTop: 40,
+    paddingBottom: 40,
   },
   heading: {
-    fontSize: 34,
-    fontWeight: '800',
+    fontSize: 32,
+    fontWeight: '900',
     color: Colors.shadowGrey,
-    lineHeight: 42,
-    marginBottom: 10,
+    letterSpacing: -1.3,
+    lineHeight: 38,
+    marginBottom: 8,
   },
   subtext: {
     fontSize: 15,
     color: Colors.mutedText,
-    marginBottom: 28,
+  },
+  inputWrapper: {
+    backgroundColor: Colors.soft,
+    borderRadius: 18,
+    borderWidth: 2,
+    borderColor: 'transparent',
   },
   nameInput: {
     fontSize: 18,
-    fontWeight: '500',
+    fontWeight: '600',
     color: Colors.shadowGrey,
-    backgroundColor: Colors.soft,
-    borderRadius: 16,
-    paddingHorizontal: 18,
-    paddingVertical: 16,
-    marginBottom: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 18,
+  },
+  feedbackRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 12,
+    gap: 8,
+  },
+  feedbackDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
   feedbackText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
-    marginTop: 2,
+  },
+  errorText: {
+    fontSize: 13,
+    color: '#E63946',
+    marginTop: 12,
+    fontWeight: '600',
   },
   bottomSection: {
     paddingHorizontal: 24,
-    paddingBottom: 24,
+    paddingBottom: 32,
   },
   continueBtn: {
     paddingVertical: 17,
     borderRadius: 16,
     alignItems: 'center',
-    ...Shadow.button,
-  },
-  continueBtnDisabled: {
-    opacity: 0.4,
   },
   continueBtnText: {
-    color: '#fff',
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: 'bold',
   },
 });

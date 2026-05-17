@@ -5,15 +5,35 @@ import Foundation
 enum APIConfig {
     /// Base URL of the GrayMan FastAPI backend.
     ///
-    /// For on-device testing, this points at the Mac's LAN IP. The simulator
-    /// hits the same address via the host machine. Change this when the
-    /// backend moves to a deployed host.
+    /// Resolution order (first hit wins):
+    ///   1. `API_BASE_URL` process-environment variable — set via Xcode's
+    ///      Scheme editor for ad-hoc debug runs against a non-default host.
+    ///   2. `API_BASE_URL` Info.plist key — populated per build configuration
+    ///      so debug / staging / prod each ship with their own URL.
+    ///   3. The hardcoded dev fallback below (LAN address of the Mac
+    ///      running `docker compose up`).
     ///
     /// ATS exception: HTTP loads to a private IP normally trip App Transport
     /// Security on iOS. The bundled `Info.plist` sets
     /// `NSAllowsLocalNetworking = true` so requests to RFC-1918 hosts succeed
-    /// without arbitrary-loads being enabled globally.
-    static let baseURL = URL(string: "http://192.168.1.38:8000/api/v1")!
+    /// without arbitrary-loads being enabled globally. Production builds
+    /// MUST point at an `https://` host so ATS is satisfied.
+    static let baseURL: URL = {
+        if let env = ProcessInfo.processInfo.environment["API_BASE_URL"],
+           !env.isEmpty,
+           let url = URL(string: env) {
+            return url
+        }
+        if let plist = Bundle.main.object(forInfoDictionaryKey: "API_BASE_URL") as? String,
+           !plist.isEmpty,
+           let url = URL(string: plist) {
+            return url
+        }
+        // Compile-time fallback — keep in sync with `Info.plist`. Used only
+        // when neither override path returns a value (effectively never in a
+        // bundled build, but safe for previews / unit tests).
+        return URL(string: "http://192.168.1.38:8000/api/v1")!
+    }()
 
     /// Absolute fallback when CoreLocation is denied/unavailable. Coarse
     /// city-centre coordinates so a profile screen never shows "0 km away"

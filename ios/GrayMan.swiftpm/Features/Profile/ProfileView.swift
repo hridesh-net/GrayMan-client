@@ -14,11 +14,11 @@ struct ProfileView: View {
     let onExplore: (() -> Void)?                        // tap the Explore tab to navigate
     let onSignOut: (() -> Void)?                        // sign-out from SettingsView routes here
     let onRecordReel: (() -> Void)?                     // re-shoot reel (from failed analysis banner)
+    let onHome: (() -> Void)?                           // Home tab → return to HomeView
 
     private var isSelf: Bool { worker == nil }
 
     @State private var model: ProfileViewModel
-    @State private var activeTab: Int = 0
     @State private var selectedSkills: Set<Int> = [0, 1]
     @State private var isSaved: Bool = false
     @State private var showHireAlert: Bool = false
@@ -43,13 +43,15 @@ struct ProfileView: View {
          onBack: (() -> Void)? = nil,
          onExplore: (() -> Void)? = nil,
          onSignOut: (() -> Void)? = nil,
-         onRecordReel: (() -> Void)? = nil) {
+         onRecordReel: (() -> Void)? = nil,
+         onHome: (() -> Void)? = nil) {
         self.userName = userName
         self.worker = worker
         self.onBack = onBack
         self.onExplore = onExplore
         self.onSignOut = onSignOut
         self.onRecordReel = onRecordReel
+        self.onHome = onHome
         if let w = worker {
             _model = State(wrappedValue: ProfileViewModel(mode: .otherWorker(id: w.id), seed: w))
         } else {
@@ -227,7 +229,6 @@ struct ProfileView: View {
                 Task { await model.update(update) }
             }
         }
-        .sensoryFeedback(.selection, trigger: activeTab)
         .task { await model.load() }
         // Resolve the GPS-derived label for the self profile. Runs only on
         // the self path — other-worker profiles keep their backend city.
@@ -916,70 +917,30 @@ struct ProfileView: View {
     // MARK: - Floating LIQUID GLASS tab bar (glass #2)
 
     private var tabBar: some View {
-        HStack(spacing: 0) {
-            tabItem(idx: 1, icon: "house.fill",
-                    label: theme.t("Home", "होम"))
-            tabItem(idx: 2, icon: "square.grid.2x2.fill",
-                    label: theme.t("Explore", "खोजें"),
-                    action: onExplore)
-            addButton
-            tabItem(idx: 0, icon: "person.crop.circle.fill",
-                    label: theme.t("Profile", "प्रोफ़ाइल"),
-                    forceActive: isSelf)
-            tabItem(idx: 4, icon: "gearshape.fill",
-                    label: theme.t("Settings", "सेटिंग्स"),
-                    action: { showSettings = true })
-        }
-        .padding(.horizontal, 8)
-        .frame(height: 68)
-        // iOS 26 native liquid glass — locked to light mode via the
-        // root WindowGroup's .preferredColorScheme(.light), so the glass
-        // tone stays consistent regardless of system appearance.
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
-        .shadow(color: .black.opacity(0.14), radius: 16, x: 0, y: 8)
-    }
-
-    private func tabItem(
-        idx: Int,
-        icon: String,
-        label: String,
-        action: (() -> Void)? = nil,
-        forceActive: Bool = false
-    ) -> some View {
-        let active = forceActive || activeTab == idx
-        return Button {
-            if let action { action() } else { activeTab = idx }
-        } label: {
-            VStack(spacing: 3) {
-                Image(systemName: icon)
-                    .font(.system(size: 19))
-                    .foregroundStyle(active ? theme.accent : Color.shadowGrey.opacity(0.35))
-                    .accessibilityHidden(true)
-                Text(label)
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(active ? theme.accent : Color.dimText)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 8)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(label)
-        .accessibilityAddTraits(active ? [.isButton, .isSelected] : .isButton)
-    }
-
-    private var addButton: some View {
-        Button(action: { showAddSheet = true }) {
-            Image(systemName: "plus")
-                .font(.system(size: 22, weight: .bold))
-                .foregroundStyle(.white)
-                .frame(width: 46, height: 46)
-                .background(Circle().fill(theme.accent))
-                .shadow(color: theme.accent.opacity(0.42), radius: 8, x: 0, y: 4)
-                .accessibilityHidden(true)
-        }
-        .buttonStyle(PressScaleStyle(scale: 0.92))
-        .accessibilityLabel(theme.t("Create new job", "नया काम बनाएं"))
-        .accessibilityHint("Open the job creation sheet")
+        FloatingTabBar(
+            items: [
+                .init(id: "home",     icon: "house.fill",
+                      label: theme.t("Home", "होम")),
+                .init(id: "explore",  icon: "square.grid.2x2.fill",
+                      label: theme.t("Explore", "खोजें")),
+                .init(id: "profile",  icon: "person.crop.circle.fill",
+                      label: theme.t("Profile", "प्रोफ़ाइल")),
+                .init(id: "settings", icon: "gearshape.fill",
+                      label: theme.t("Settings", "सेटिंग्स")),
+            ],
+            selectedID: isSelf ? "profile" : "explore",
+            onSelect: { id in
+                switch id {
+                case "home":     onHome?()
+                case "explore":  onExplore?()
+                case "settings": showSettings = true
+                default: break  // already on profile, no-op
+                }
+            },
+            centerIcon: "plus",
+            centerAccessibilityLabel: theme.t("Create new job", "नया काम बनाएं"),
+            onCenterAction: { showAddSheet = true },
+        )
     }
 
     // MARK: - Add sheet

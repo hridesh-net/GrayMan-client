@@ -65,21 +65,29 @@ final class WorkerService {
     // MARK: Profiles
 
     func fetchSelf() async throws -> Worker {
-        let (lat, lng) = await LocationService.shared.current()
+        // No GPS wait — distance-from-self is meaningless (always 0), so
+        // there is nothing to compute from the user's coordinates here.
+        // Avoids stalling the profile open on a cold-start 15s GPS lock.
         let dto: WorkerDTO = try await client.request(.GET, "/workers/me")
-        return Worker(dto: dto, userLat: lat, userLng: lng)
+        return Worker(dto: dto, userLat: 0, userLng: 0)
     }
 
     func fetchWorker(id: String) async throws -> Worker {
-        let (lat, lng) = await LocationService.shared.current()
+        // Use whatever fix we have synchronously (in-memory or persisted
+        // from a prior session). Never block this call on a fresh GPS
+        // lock — a missing "3.2 km" distance is preferable to a 15s
+        // stall on the worker profile.
+        let fix = LocationService.shared.lastKnown ?? (lat: 0, lng: 0)
         let dto: WorkerDTO = try await client.request(.GET, "/workers/\(id)", authenticated: false)
-        return Worker(dto: dto, userLat: lat, userLng: lng)
+        return Worker(dto: dto, userLat: fix.lat, userLng: fix.lng)
     }
 
     func updateSelf(_ update: WorkerUpdateRequest) async throws -> Worker {
-        let (lat, lng) = await LocationService.shared.current()
+        // Same reasoning as `fetchSelf` — no GPS wait. The PUT itself
+        // already carries the lat/lng when this is invoked from
+        // `syncSelfLocationIfNeeded`, so we don't need a fix here.
         let dto: WorkerDTO = try await client.request(.PUT, "/workers/me", body: update)
-        return Worker(dto: dto, userLat: lat, userLng: lng)
+        return Worker(dto: dto, userLat: 0, userLng: 0)
     }
 
     // MARK: Vouches
@@ -321,6 +329,62 @@ final class WorkerService {
     func hasCompletedHire(of workerID: String) async -> Bool {
         guard let outgoing = try? await fetchHires(direction: "outgoing") else { return false }
         return outgoing.contains { $0.workerID == workerID && $0.status == "completed" }
+    }
+
+    // MARK: Posts (Home feed)
+
+    func fetchFeed(
+        lat: Double?, lng: Double?, radiusKm: Double = 25,
+        page: Int = 1, limit: Int = 20,
+    ) async throws -> [PostDTO] {
+        var query: [URLQueryItem] = [
+            URLQueryItem(name: "radius_km", value: String(radiusKm)),
+            URLQueryItem(name: "page",      value: String(page)),
+            URLQueryItem(name: "limit",     value: String(limit)),
+        ]
+        if let lat { query.append(URLQueryItem(name: "lat", value: String(lat))) }
+        if let lng { query.append(URLQueryItem(name: "lng", value: String(lng))) }
+        return try await client.request(.GET, "/posts/feed", query: query, authenticated: false)
+    }
+
+    func fetchPosts(byAuthor authorID: String, page: Int = 1, limit: Int = 20) async throws -> [PostDTO] {
+        try await client.request(
+            .GET, "/posts/by-author/\(authorID)",
+            query: [
+                URLQueryItem(name: "page",  value: String(page)),
+                URLQueryItem(name: "limit", value: String(limit)),
+            ],
+            authenticated: false,
+        )
+    }
+
+    @discardableResult
+    func createPost(body: String, imageURL: String? = nil,
+                    lat: Double? = nil, lng: Double? = nil) async throws -> PostDTO {
+        try await client.request(
+            .POST, "/posts",
+            body: PostCreateRequest(body: body, imageURL: imageURL, lat: lat, lng: lng),
+        )
+    }
+
+    func deletePost(id: String) async throws {
+        try await client.requestVoid(.DELETE, "/posts/\(id)")
+    }
+
+    func requestPostImageUploadURL(contentType: String = "image/jpeg") async throws -> PresignedUploadDTO {
+        try await client.request(
+            .POST, "/posts/image/upload-url",
+            query: [URLQueryItem(name: "content_type", value: contentType)],
+        )
+    }
+
+    // MARK: Avatar upload
+
+    func requestAvatarUploadURL(contentType: String = "image/jpeg") async throws -> PresignedUploadDTO {
+        try await client.request(
+            .POST, "/workers/me/avatar/upload-url",
+            query: [URLQueryItem(name: "content_type", value: contentType)],
+        )
     }
 
     // MARK: Notifications

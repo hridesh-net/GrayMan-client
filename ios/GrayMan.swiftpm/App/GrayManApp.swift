@@ -6,14 +6,16 @@ import SwiftUI
 // to advance / retreat; the App owns the canonical state.
 
 enum Screen: Equatable {
-    case onboarding   // S1 — splash + Get Started / Sign In
-    case phoneAuth    // S2 — phone + OTP
-    case nameEntry    // SName — capture user's display name
-    case chooseRole   // SChoose — Professional or Explore
-    case recordReel   // SRecord — 30s intro video
-    case explore      // SExplore — swipeable nearby-worker feed
-    case workerProfile // S3 in "view other worker" mode
-    case profile      // S3 — own dashboard with glass tab bar
+    case onboarding       // S1 — splash + Get Started / Sign In
+    case phoneAuth        // S2 — phone + OTP
+    case nameEntry        // SName — capture user's display name
+    case avatarOnboarding // SAvatar — optional profile-photo picker
+    case chooseRole       // SChoose — Professional or Explore
+    case recordReel       // SRecord — 30s intro video
+    case explore          // SExplore — swipeable nearby-worker feed
+    case workerProfile    // S3 in "view other worker" mode
+    case home             // SHome — stats card + nearby posts feed (landing)
+    case profile          // S3 — own dashboard with glass tab bar
 }
 
 @main
@@ -30,11 +32,22 @@ struct GrayManApp: App {
     private let recordingService: RecordingService = AVRecordingService()
 
     init() {
+        // Raise URLCache.shared above the iOS default (≈4 MB memory /
+        // 20 MB disk) so AsyncImage's repeated fetches in the Home feed
+        // hit cache after the first paint. Saves repeated 100-300 KB
+        // PNG/JPEG fetches on Tier-3 networks, which is the difference
+        // between "feels native" and "perpetually loading".
+        URLCache.shared = URLCache(
+            memoryCapacity: 32 * 1024 * 1024,    // 32 MB
+            diskCapacity:   256 * 1024 * 1024,   // 256 MB
+            directory: nil,
+        )
+
         // If we already have a JWT in the Keychain, skip the auth flow and
-        // drop the user straight into their profile. Otherwise start at the
-        // splash screen.
+        // drop the user straight into the Home screen. Otherwise start at
+        // the splash screen.
         let hasToken = TokenStore.shared.token != nil
-        _screen = State(initialValue: hasToken ? .profile : .onboarding)
+        _screen = State(initialValue: hasToken ? .home : .onboarding)
     }
 
     var body: some Scene {
@@ -78,15 +91,22 @@ struct GrayManApp: App {
                 goBack: { screen = .phoneAuth },
                 goNext: { name in
                     userName = name
-                    screen = .chooseRole
+                    screen = .avatarOnboarding
                     Task { try? await WorkerService.shared.updateSelf(WorkerUpdateRequest(name: name)) }
                 }
+            )
+
+        case .avatarOnboarding:
+            AvatarPickerView(
+                name: userName,
+                goBack: { screen = .nameEntry },
+                goNext: { screen = .chooseRole }
             )
 
         case .chooseRole:
             ChooseRoleView(
                 name: userName.split(separator: " ").first.map(String.init) ?? userName,
-                goBack: { screen = .nameEntry },
+                goBack: { screen = .avatarOnboarding },
                 goProfessional: {
                     reelOrigin = .chooseRole
                     screen = .recordReel
@@ -98,7 +118,7 @@ struct GrayManApp: App {
             RecordReelView(
                 model: RecordReelViewModel(service: recordingService),
                 goBack: { screen = reelOrigin },
-                goDone: { _ in screen = .profile }
+                goDone: { _ in screen = .home }
             )
 
         case .explore:
@@ -117,9 +137,24 @@ struct GrayManApp: App {
                 onBack: { screen = .explore }
             )
 
+        case .home:
+            HomeView(
+                userName: userName,
+                onProfile: { screen = .profile },
+                onExplore: { goExplore(from: .home) },
+                onSettings: { screen = .profile },  // Settings lives inside ProfileView for now
+                onViewWorker: { worker in
+                    selectedWorker = worker
+                    screen = .workerProfile
+                }
+            )
+
         case .profile:
             ProfileView(
-                userName: userName.isEmpty ? "Ramesh Kumar" : userName,
+                // Pass through whatever name we have (may be empty for a
+                // returning user with a stored token). ProfileView shows
+                // a redacted skeleton until the backend profile loads.
+                userName: userName,
                 onExplore: { goExplore(from: .profile) },
                 onSignOut: {
                     userName = ""
@@ -130,7 +165,8 @@ struct GrayManApp: App {
                 onRecordReel: {
                     reelOrigin = .profile
                     screen = .recordReel
-                }
+                },
+                onHome: { screen = .home }
             )
         }
     }

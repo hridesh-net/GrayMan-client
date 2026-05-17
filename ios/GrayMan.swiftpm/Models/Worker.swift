@@ -19,6 +19,7 @@ struct Worker: Identifiable, Hashable, Sendable {
     let gradientStartHex: String
     let gradientEndHex: String
     let isVerified: Bool              // reel-verified profile badge
+    let avatarURL: String?            // optional profile picture (S3 public URL)
 }
 
 extension Worker {

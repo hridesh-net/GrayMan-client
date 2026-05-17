@@ -38,7 +38,7 @@ export default function OnboardingScreen({ goNext }) {
           <Text style={styles.logoEmoji}>⚡</Text>
         </LinearGradient>
 
-        <Text style={styles.appTitle}>GrayMan</Text>
+        <Text style={styles.appTitle}>sthapna.ai</Text>
 
         <Text style={styles.subtitle}>
           {t(

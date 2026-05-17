@@ -19,8 +19,9 @@ final class ProfileViewModel {
     private(set) var analysis: AnalysisStatusDTO?
     private(set) var unreadNotifications: Int = 0
     private(set) var hasPendingReelReview: Bool = false
-    /// Server-sourced work history. If the worker has none, the view falls
-    /// back to the trade-keyed `WorkHistorySamples` so the section isn't blank.
+    /// Server-sourced work history. Empty when the worker hasn't added
+    /// anything yet — the view renders an empty-state instead of fake
+    /// sample data.
     private(set) var workHistory: [WorkHistoryDTO] = []
     /// Has the viewer ever completed a hire of this worker? Used to gate
     /// the vouch action (backend will refuse with 403 otherwise).
@@ -45,39 +46,73 @@ final class ProfileViewModel {
 
     func load() async {
         state = .loading
+        let loadedWorker: Worker
         do {
             switch mode {
             case .selfProfile:
-                worker = try await service.fetchSelf()
+                loadedWorker = try await service.fetchSelf()
             case .otherWorker(let id):
-                worker = try await service.fetchWorker(id: id)
+                loadedWorker = try await service.fetchWorker(id: id)
             }
-            if let workerID = worker?.id {
-                if let received = try? await service.fetchReceivedVouches(for: workerID) {
-                    receivedVouchCount = received.count
-                }
-                // Work history is silent on failure — the section just falls
-                // back to the trade-keyed sample table.
-                if let history = try? await service.fetchWorkHistory(workerID: workerID) {
-                    workHistory = history
-                }
-                // Hire status only matters when looking at someone else.
-                if case .otherWorker = mode {
-                    if let outgoing = try? await service.fetchHires(direction: "outgoing") {
-                        let mine = outgoing.filter { $0.workerID == workerID }
-                        hasCompletedHire = mine.contains { $0.status == "completed" }
-                        // Pick the most recent "live" record (latest non-terminal
-                        // status surfaces in the UI for the action button).
-                        activeHireStatus = mine.first?.status
-                    }
-                }
-            }
-            state = .loaded
-            if mode == .selfProfile { await refreshAnalysis() }
         } catch {
             let msg = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             lastError = msg
             state = .failed(msg)
+            return
+        }
+
+        // Flip to .loaded as soon as the basic profile is in. The view
+        // can render the header / card / actions immediately while the
+        // supplementary calls below resolve in the background.
+        worker = loadedWorker
+        state = .loaded
+
+        let workerID = loadedWorker.id
+        let isSelf = (mode == .selfProfile)
+
+        // Fan-out: kick off every independent supplementary request in
+        // parallel so the total wall time is dominated by the slowest
+        // single call rather than their sum.
+        async let receivedFetch: [VouchDTO] = service.fetchReceivedVouches(for: workerID)
+        async let historyFetch:  [WorkHistoryDTO] = service.fetchWorkHistory(workerID: workerID)
+
+        // Mode-specific calls run as unstructured Tasks so we can hold
+        // an optional handle (and skip them entirely for the irrelevant
+        // mode).
+        let analysisTask: Task<AnalysisStatusDTO?, Never>? = isSelf
+            ? Task { try? await service.fetchAnalysisStatus() }
+            : nil
+        let notifsTask: Task<NotificationListResponseDTO?, Never>? = isSelf
+            ? Task { try? await service.fetchNotifications(onlyUndecided: false, limit: 50) }
+            : nil
+        let hiresTask: Task<[HireDTO]?, Never>? = isSelf
+            ? nil
+            : Task { try? await service.fetchHires(direction: "outgoing") }
+
+        if let received = try? await receivedFetch {
+            receivedVouchCount = received.count
+        }
+        if let history = try? await historyFetch {
+            workHistory = history
+        }
+        if let analysis = await analysisTask?.value {
+            self.analysis = analysis
+            if analysis.status == "processing" || analysis.status == "pending" {
+                startPollingAnalysis()
+            }
+        }
+        if let notifs = await notifsTask?.value {
+            unreadNotifications = notifs.unreadCount
+            hasPendingReelReview = notifs.notifications.contains { n in
+                n.kind == "reel_analysis_ready" && (n.status == "unread" || n.status == "read")
+            }
+        }
+        if let outgoing = await hiresTask?.value {
+            let mine = outgoing.filter { $0.workerID == workerID }
+            hasCompletedHire = mine.contains { $0.status == "completed" }
+            // Pick the most recent "live" record (latest non-terminal
+            // status surfaces in the UI for the action button).
+            activeHireStatus = mine.first?.status
         }
     }
 

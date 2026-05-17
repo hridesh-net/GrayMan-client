@@ -123,7 +123,7 @@ export default function ProofOfWorkScreen({ workerId, onClose }) {
             <Text style={styles.emptyTitle}>{t('No sessions yet', 'अभी कोई सेशन नहीं')}</Text>
             <Text style={styles.emptyBody}>
               {t(
-                'Tap "Add Today's Progress" to log your first day on the job.',
+                `Tap "Add Today's Progress" to log your first day on the job.`,
                 '"आज की प्रगति जोड़ें" टैप करें और अपना पहला दिन दर्ज करें।',
               )}
             </Text>

@@ -26,5 +26,17 @@
     -->
     <key>NSLocationWhenInUseUsageDescription</key>
     <string>sthapna.ai uses your approximate location (~3 km) to show nearby workers and filter by radius. Precise GPS is never requested.</string>
+
+    <!--
+        Backend base URL. Default is the LAN dev server; replace per build
+        configuration (e.g. via PlistBuddy in CI) so debug/staging/prod each
+        ship with their own value instead of a Swift-source constant.
+
+        APIConfig also honours an `API_BASE_URL` process-environment override,
+        which lets you point a debug run at a different host from Xcode's
+        Scheme editor without re-signing.
+    -->
+    <key>API_BASE_URL</key>
+    <string>http://192.168.1.38:8000/api/v1</string>
 </dict>
 </plist>

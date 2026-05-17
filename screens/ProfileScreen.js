@@ -1,25 +1,29 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { ActivityIndicator, Linking, Alert } from 'react-native';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   Modal,
-  Switch,
   TouchableOpacity,
+  ActivityIndicator,
+  Alert,
+  Linking,
+  TextInput,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
+import { Platform } from 'react-native';
 
 import { useTheme } from '../src/AppTheme';
 import Blobs from '../src/components/Blobs';
 import PressScale from '../src/components/PressScale';
 import VouchScoreRing from '../src/components/VouchScoreRing';
 import { workerService } from '../src/api/workerService';
-import { Colors, Shadow, Radius } from '../src/theme';
+import { Colors, Glass } from '../src/theme';
+
 import NotificationsScreen from './NotificationsScreen';
 import VoiceInterviewScreen from './VoiceInterviewScreen';
 import ProofOfWorkScreen from './ProofOfWorkScreen';
@@ -27,157 +31,77 @@ import GiveVouchSheet from './GiveVouchSheet';
 import SettingsScreen from './SettingsScreen';
 
 // ---------------------------------------------------------------------------
-// Availability states
+// Platform-aware glass surface (BlurView on iOS, styled View on Android)
 // ---------------------------------------------------------------------------
-const AV_STATES = [
-  { label: 'Available', color: '#22C55E' },
-  { label: 'Busy',      color: '#F59E0B' },
-  { label: 'Away',      color: Colors.dimText },
-];
-
-// ---------------------------------------------------------------------------
-// Inline placeholder modal factory
-// ---------------------------------------------------------------------------
-function PlaceholderModal({ visible, title, onClose, accent }) {
+function GlassCard({ style, children }) {
+  if (Platform.OS === 'ios') {
+    return (
+      <BlurView intensity={Glass.regular.intensity} tint={Glass.regular.tint} style={style}>
+        {children}
+      </BlurView>
+    );
+  }
   return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      presentationStyle="pageSheet"
-      onRequestClose={onClose}
-    >
-      <SafeAreaView style={[plStyles.root, { backgroundColor: Colors.canvas }]} edges={['top', 'bottom']}>
-        <Blobs accent={accent} opacity={0.5} />
-        <View style={plStyles.inner}>
-          <Text style={plStyles.title}>{title}</Text>
-          <Text style={plStyles.sub}>This screen will be wired in App.js</Text>
-          <PressScale
-            onPress={onClose}
-            style={[plStyles.closeBtn, { backgroundColor: accent }]}
-          >
-            <Text style={plStyles.closeBtnText}>Close</Text>
-          </PressScale>
-        </View>
-      </SafeAreaView>
-    </Modal>
+    <View style={[{
+      backgroundColor: Glass.regular.backgroundColor,
+      borderColor: Glass.regular.borderColor,
+      borderWidth: Glass.regular.borderWidth,
+    }, style]}>
+      {children}
+    </View>
   );
 }
-
-const plStyles = StyleSheet.create({
-  root:     { flex: 1 },
-  inner:    { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 },
-  title:    { fontSize: 22, fontWeight: '800', color: Colors.shadowGrey, letterSpacing: -0.5, marginBottom: 8 },
-  sub:      { fontSize: 14, color: Colors.mutedText, marginBottom: 32, textAlign: 'center' },
-  closeBtn: { borderRadius: 14, paddingHorizontal: 36, paddingVertical: 14 },
-  closeBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
-});
 
 // ---------------------------------------------------------------------------
 // Skill chip
 // ---------------------------------------------------------------------------
-function SkillChip({ label, verified, accent }) {
+function SkillChip({ label, verified, active, onPress, accent }) {
   return (
-    <View style={[
-      chipStyles.chip,
-      verified
-        ? { borderColor: Colors.verifiedBlue, borderWidth: 1.5, backgroundColor: 'rgba(59,130,246,0.06)' }
-        : { borderColor: 'rgba(39,41,50,0.12)', borderWidth: 1, backgroundColor: Colors.soft },
-    ]}>
-      <Text style={[
-        chipStyles.label,
-        { color: verified ? Colors.verifiedBlue : Colors.mutedText },
+    <PressScale onPress={onPress}>
+      <View style={[
+        styles.chip,
+        active ? { backgroundColor: 'rgba(39,41,50,0.06)', borderColor: 'rgba(39,41,50,0.38)' } : { backgroundColor: 'transparent', borderColor: 'rgba(39,41,50,0.13)' }
       ]}>
-        {label}
-      </Text>
-      {verified && (
-        <Text style={chipStyles.checkmark}> ✓</Text>
-      )}
-    </View>
+        <Text style={[
+          styles.chipLabel,
+          { color: active ? accent : Colors.mutedText },
+        ]}>
+          {label}
+        </Text>
+        {verified && (
+          <Text style={styles.chipCheckmark}> ✓</Text>
+        )}
+      </View>
+    </PressScale>
   );
 }
 
-const chipStyles = StyleSheet.create({
-  chip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    marginRight: 8,
-    marginBottom: 8,
-  },
-  label:     { fontSize: 13, fontWeight: '600' },
-  checkmark: { fontSize: 11, fontWeight: '800', color: Colors.verifiedBlue },
-});
-
 // ---------------------------------------------------------------------------
-// Stat column (used inside profile card)
+// Stat column
 // ---------------------------------------------------------------------------
 function StatCol({ value, label, borderRight }) {
   return (
-    <View style={[statColStyles.col, borderRight && statColStyles.borderRight]}>
-      <Text style={statColStyles.value}>{value}</Text>
-      <Text style={statColStyles.label}>{label}</Text>
+    <View style={[styles.statCol, borderRight && styles.statBorderRight]}>
+      <Text style={styles.statValue}>{value}</Text>
+      <Text style={styles.statLabel}>{label}</Text>
     </View>
   );
 }
-
-const statColStyles = StyleSheet.create({
-  col:         { flex: 1, alignItems: 'center', paddingVertical: 2 },
-  borderRight: { borderRightWidth: 1, borderRightColor: 'rgba(39,41,50,0.10)' },
-  value:       { fontSize: 17, fontWeight: '800', color: Colors.shadowGrey, letterSpacing: -0.3 },
-  label:       { fontSize: 11, color: Colors.dimText, marginTop: 2, fontWeight: '500' },
-});
-
-// ---------------------------------------------------------------------------
-// Work stat card (2×2 grid, isSelf only)
-// ---------------------------------------------------------------------------
-function WorkStatCard({ value, label }) {
-  return (
-    <View style={[wsStyles.card, Shadow.card]}>
-      <Text style={wsStyles.value}>{value}</Text>
-      <Text style={wsStyles.label}>{label}</Text>
-    </View>
-  );
-}
-
-const wsStyles = StyleSheet.create({
-  card:  {
-    width: '47%',
-    backgroundColor: Colors.white,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
-  },
-  value: { fontSize: 24, fontWeight: '800', color: Colors.shadowGrey, letterSpacing: -0.6, marginBottom: 4 },
-  label: { fontSize: 12, color: Colors.dimText },
-});
 
 // ---------------------------------------------------------------------------
 // Tab bar item
 // ---------------------------------------------------------------------------
 function TabItem({ emoji, label, active, accent, onPress }) {
   return (
-    <TouchableOpacity style={tabStyles.item} onPress={onPress} activeOpacity={0.75}>
-      <Text style={[tabStyles.emoji, { color: active ? accent : 'rgba(39,41,50,0.28)' }]}>{emoji}</Text>
-      <Text style={[tabStyles.label, { color: active ? accent : Colors.dimText }]}>{label}</Text>
-      {active && <View style={[tabStyles.dot, { backgroundColor: accent }]} />}
+    <TouchableOpacity style={styles.tabItem} onPress={onPress} activeOpacity={0.75}>
+      <Text style={[styles.tabEmoji, { color: active ? accent : 'rgba(39,41,50,0.35)' }]}>{emoji}</Text>
+      <Text style={[styles.tabLabel, { color: active ? accent : Colors.dimText }]}>{label}</Text>
     </TouchableOpacity>
   );
 }
 
-const tabStyles = StyleSheet.create({
-  item:  { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 8, gap: 2 },
-  emoji: { fontSize: 20 },
-  label: { fontSize: 10, fontWeight: '700' },
-  dot:   { width: 4, height: 4, borderRadius: 2, marginTop: 2 },
-});
-
-// ---------------------------------------------------------------------------
-// Main ProfileScreen
-// ---------------------------------------------------------------------------
 export default function ProfileScreen({
-  userName = '',
+  userName = 'Ramesh Kumar',
   worker: workerProp = null,
   onBack = null,
   onExplore = null,
@@ -192,6 +116,8 @@ export default function ProfileScreen({
   const [loading, setLoading] = useState(isSelf && !workerProp);
   const [canVouch, setCanVouch] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [workHistory, setWorkHistory] = useState([]);
+  const [selectedSkills, setSelectedSkills] = useState(new Set([0, 1]));
 
   const loadProfile = useCallback(async () => {
     if (workerProp) {
@@ -199,6 +125,8 @@ export default function ProfileScreen({
       try {
         const can = await workerService.hasCompletedHire(workerProp.id);
         setCanVouch(can);
+        const history = await workerService.fetchWorkHistory(workerProp.id);
+        setWorkHistory(history || []);
       } catch { /* ignore */ }
       return;
     }
@@ -209,8 +137,10 @@ export default function ProfileScreen({
       workerService.syncSelfLocationIfNeeded();
       const notifs = await workerService.fetchNotifications(true, 20);
       setUnreadCount((notifs?.notifications || notifs || []).length);
+      const history = await workerService.fetchWorkHistory(w.id);
+      setWorkHistory(history || []);
     } catch (e) {
-      Alert.alert('Error', e.message || 'Could not load profile');
+      // Alert.alert('Error', e.message || 'Could not load profile');
     } finally {
       setLoading(false);
     }
@@ -222,30 +152,30 @@ export default function ProfileScreen({
 
   const worker = profile;
 
-  // ---- Derived display values --------------------------------------------
-  const displayName    = worker?.name ?? (userName || '…');
-  const displayTrade   = worker?.trade   ?? t('Electrician · 8 yrs exp', 'इलेक्ट्रीशियन · 8 वर्ष अनुभव');
-  const displayLocation = (worker?.location?.split('·')[0]?.trim()) ?? 'Mumbai';
-  const displayJobs    = worker ? String(worker.jobs) : '48';
-  const displayRating  = worker?.rating  ?? '4.9';
-  const displayVouchScore = worker?.vouchScore ?? 73;
-  const skills         = worker?.tags    ?? ['Wiring', 'Installation', 'Repair', 'Maintenance', 'Circuit', 'Equipment'];
-  const verifiedIndices = worker?.verifiedTagIndices ?? new Set([0, 1]);
+  // Derived
+  const displayName = worker?.name ?? (userName || 'Your name');
+  const displayTrade = worker?.trade ?? 'Your trade';
+  const displayLocation = worker?.location?.split('·')[0]?.trim() ?? 'Locating…';
+  const displayJobs = worker ? String(worker.jobs) : '00';
+  const displayRating = worker?.rating ?? '0.0';
+  const displayVouchScore = worker?.vouchScore ?? 0;
+  const skills = worker?.tags?.length ? worker.tags : (loading ? ['Skill one', 'Skill two'] : []);
+  const verifiedIndices = worker?.verifiedTagIndices ?? new Set();
   const avatarGradientEnd = worker ? worker.gradientEndHex : accent;
-  const initials       = worker
+  const initials = worker
     ? worker.initials
     : displayName.split(' ').map(p => p[0]).join('').slice(0, 2).toUpperCase();
 
-  // ---- State --------------------------------------------------------------
-  const [activeTab,          setActiveTab]          = useState(isSelf ? 2 : 0);
+  // States
+  const [activeTab, setActiveTab] = useState(isSelf ? 0 : 0);
   const [showVoiceInterview, setShowVoiceInterview] = useState(false);
-  const [showProofOfWork,    setShowProofOfWork]    = useState(false);
-  const [showGiveVouch,      setShowGiveVouch]      = useState(false);
-  const [showSettings,       setShowSettings]       = useState(false);
-  const [showAddSheet,       setShowAddSheet]       = useState(false);
-  const [isSaved,            setIsSaved]            = useState(false);
-  const [availability,       setAvailability]       = useState(0);
-  const [showNotifications,  setShowNotifications]  = useState(false);
+  const [showProofOfWork, setShowProofOfWork] = useState(false);
+  const [showGiveVouch, setShowGiveVouch] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showAddSheet, setShowAddSheet] = useState(false);
+  const [showWorkHistoryEditor, setShowWorkHistoryEditor] = useState(false);
+  const [isSaved, setIsSaved] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
 
   useEffect(() => {
     if (!worker?.id || isSelf) return;
@@ -273,295 +203,227 @@ export default function ProfileScreen({
     if (!worker?.id) return;
     try {
       await workerService.createHire(worker.id);
-      Alert.alert(t('Sent', 'भेजा'), t('Hire request sent', 'हायर अनुरोध भेजा गया'));
+      Alert.alert(t('Result', 'स्थिति'), t('Hire request sent. They\'ll be notified.', 'अनुरोध भेज दिया गया। उन्हें सूचना मिलेगी।'));
     } catch (e) {
       Alert.alert('Error', e.message);
     }
   };
 
-  if (loading) {
-    return (
-      <SafeAreaView style={[styles.root, { alignItems: 'center', justifyContent: 'center' }]}>
-        <ActivityIndicator size="large" color={accent} />
-      </SafeAreaView>
-    );
-  }
+  const toggleSkill = (idx) => {
+    const next = new Set(selectedSkills);
+    if (next.has(idx)) next.delete(idx);
+    else next.add(idx);
+    setSelectedSkills(next);
+  };
 
-  // -------------------------------------------------------------------------
   return (
-    <SafeAreaView style={styles.root} edges={['top']}>
+    <View style={styles.root}>
       <StatusBar style="dark" />
-
-      {/* Background blobs */}
       <Blobs accent={accent} opacity={0.55} />
 
-      {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <View style={[styles.header, { paddingTop: 8 }]}>
-        {isSelf ? (
-          <>
-            <Text style={styles.headerLogo}>GrayMan</Text>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-              <PressScale onPress={() => setShowNotifications(true)} style={styles.notifBtn}>
-                <Text style={styles.notifIcon}>🔔</Text>
-                {unreadCount > 0 && (
-                  <View style={[styles.notifBadge, { backgroundColor: accent }]}>
-                    <Text style={styles.notifBadgeText}>{unreadCount}</Text>
-                  </View>
-                )}
-              </PressScale>
-              <View style={styles.liveRow}>
-                <View style={[styles.liveDot, { backgroundColor: accent }]} />
-                <Text style={[styles.liveText, { color: accent }]}>
-                  {t('Live', 'लाइव')}
-                </Text>
-              </View>
-            </View>
-          </>
-        ) : (
-          <PressScale onPress={onBack} style={styles.backBtn}>
-            <Text style={styles.backArrow}>←</Text>
-          </PressScale>
-        )}
-      </View>
-
-      {/* ── Scrollable body ─────────────────────────────────────────────────── */}
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={[styles.scroll, { paddingBottom: 120 }]}
-      >
-
-        {/* ── Profile card ─────────────────────────────────────────────────── */}
-        <View style={[styles.profileCard, Shadow.card]}>
-          {/* Top row: avatar + info + vouch ring */}
-          <View style={styles.cardTop}>
-            {/* Avatar */}
-            <LinearGradient
-              colors={[Colors.shadowGrey, avatarGradientEnd]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.avatar}
-            >
-              <Text style={styles.avatarText}>{initials}</Text>
-            </LinearGradient>
-
-            {/* Name / trade / location */}
-            <View style={styles.cardInfo}>
-              <View style={styles.nameRow}>
-                <Text style={styles.nameText} numberOfLines={1}>{displayName}</Text>
-                <View style={[styles.verifiedBadge, { backgroundColor: Colors.verifiedBlue }]}>
-                  <Text style={styles.verifiedCheck}>✓</Text>
+      <SafeAreaView edges={['top']} style={{ flex: 1 }}>
+        <View style={[styles.header, { paddingHorizontal: isSelf ? 28 : 20 }]}>
+          {onBack ? (
+            <PressScale onPress={onBack} style={styles.backBtn}>
+              <Text style={styles.backArrow}>←</Text>
+            </PressScale>
+          ) : (
+            <>
+              <Text style={styles.headerLogo}>sthapna.ai</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+                <PressScale onPress={() => setShowNotifications(true)} style={styles.notifBtn}>
+                  <Text style={styles.notifIcon}>🔔</Text>
+                  {unreadCount > 0 && (
+                    <View style={[styles.notifBadge, { backgroundColor: accent }]}>
+                      <Text style={styles.notifBadgeText}>{unreadCount}</Text>
+                    </View>
+                  )}
+                </PressScale>
+                <View style={styles.liveRow}>
+                  <View style={[styles.liveDot, { backgroundColor: accent }]} />
+                  <Text style={[styles.liveText, { color: Colors.shadowGrey }]}>
+                    {t('Live', 'लाइव')}
+                  </Text>
                 </View>
               </View>
-              <Text style={styles.tradeText}>{displayTrade}</Text>
-              <Text style={styles.locationText}>📍 {displayLocation}</Text>
-              <View style={styles.availRow}>
-                <Text style={[styles.availDot, { color: AV_STATES[isSelf ? availability : 0].color }]}>● </Text>
-                <Text style={[styles.availLabel, { color: AV_STATES[isSelf ? availability : 0].color }]}>
-                  {t(AV_STATES[isSelf ? availability : 0].label, AV_STATES[isSelf ? availability : 0].label)}
-                </Text>
+            </>
+          )}
+        </View>
+
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[styles.scroll, { paddingBottom: 120 }]}>
+          {/* Profile Card (Glass #1) */}
+          <GlassCard style={styles.profileCard}>
+            <View style={styles.cardTop}>
+              <LinearGradient
+                colors={[Colors.shadowGrey, avatarGradientEnd]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.avatar}
+              >
+                <Text style={styles.avatarText}>{initials}</Text>
+              </LinearGradient>
+
+              <View style={styles.cardInfo}>
+                <View style={styles.nameRow}>
+                  <Text style={styles.nameText} numberOfLines={1}>{displayName}</Text>
+                  {worker?.isVerified && (
+                    <View style={[styles.verifiedBadge, { backgroundColor: Colors.verifiedBlue }]}>
+                      <Text style={styles.verifiedCheck}>✓</Text>
+                    </View>
+                  )}
+                </View>
+                <Text style={styles.tradeText}>{displayTrade}</Text>
+                <View style={styles.availRow}>
+                  <Text style={styles.locationText}>📍 {displayLocation}</Text>
+                  <Text style={[styles.availLabel, { color: accent }]}>● {t('Available', 'उपलब्ध')}</Text>
+                </View>
               </View>
-            </View>
 
-            {/* Vouch ring */}
-            <VouchScoreRing score={displayVouchScore} size={64} accent={accent} />
-          </View>
-
-          {/* Stat row */}
-          <View style={styles.statDivider} />
-          <View style={styles.statRow}>
-            <StatCol value={displayJobs}    label={t('Jobs', 'काम')}       borderRight />
-            <StatCol value="₹500"           label={t('Per Day', 'प्रति दिन')} borderRight />
-            <StatCol value={`${displayRating}★`} label={t('Rating', 'रेटिंग')}  borderRight />
-            <StatCol value="8yr"            label={t('Exp', 'अनुभव')} />
-          </View>
-        </View>
-
-        {/* ── Skills ──────────────────────────────────────────────────────── */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{t('SKILLS', 'कौशल')}</Text>
-          <View style={styles.skillsWrap}>
-            {skills.map((skill, idx) => (
-              <SkillChip
-                key={`${skill}-${idx}`}
-                label={skill}
-                verified={verifiedIndices.has(idx)}
-                accent={accent}
-              />
-            ))}
-          </View>
-        </View>
-
-        {/* ── Work stats (isSelf only) ─────────────────────────────────────── */}
-        {isSelf && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>{t('WORK STATS', 'काम के आँकड़े')}</Text>
-            <View style={styles.workStatsGrid}>
-              <WorkStatCard value="48"   label={t('Jobs Done', 'काम पूरे')} />
-              <WorkStatCard value="₹42K" label={t('Monthly', 'मासिक')} />
-              <WorkStatCard value="4.9"  label={t('Rating', 'रेटिंग')} />
-              <WorkStatCard value="38"   label={t('Repeat Clients', 'नियमित ग्राहक')} />
-            </View>
-          </View>
-        )}
-
-        {/* ── Availability toggle (isSelf only) ───────────────────────────── */}
-        {isSelf && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>{t('AVAILABILITY', 'उपलब्धता')}</Text>
-            <View style={styles.avContainer}>
-              {AV_STATES.map((av, idx) => {
-                const active = availability === idx;
-                return (
-                  <PressScale
-                    key={av.label}
-                    onPress={() => setAvailability(idx)}
-                    style={[
-                      styles.avBtn,
-                      active && { backgroundColor: av.color, ...Shadow.card },
-                    ]}
-                  >
-                    <Text style={[styles.avBtnText, { color: active ? '#fff' : Colors.dimText }]}>
-                      {t(av.label, av.label)}
-                    </Text>
-                  </PressScale>
-                );
-              })}
-            </View>
-          </View>
-        )}
-
-        {/* ── Actions ─────────────────────────────────────────────────────── */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{t('ACTIONS', 'क्रियाएँ')}</Text>
-
-          {isSelf ? (
-            /* Self mode: 4 stacked buttons */
-            <View style={styles.selfActions}>
-              <PressScale style={styles.selfActionBtn}>
-                <Text style={[styles.selfActionText, { color: Colors.shadowGrey }]}>
-                  {t('Edit Profile', 'प्रोफाइल संपादित करें')}
-                </Text>
-              </PressScale>
-
-              <PressScale style={styles.selfActionBtn}>
-                <Text style={[styles.selfActionText, { color: Colors.shadowGrey }]}>
-                  {t('Share', 'शेयर करें')}
-                </Text>
-              </PressScale>
-
-              <PressScale
-                onPress={() => setShowVoiceInterview(true)}
-                style={[styles.selfActionBtnOutline, { borderColor: accent }]}
-              >
-                <Text style={[styles.selfActionText, { color: accent }]}>
-                  {t('Practice AI Interview', 'AI इंटरव्यू अभ्यास')}
-                </Text>
-              </PressScale>
-
-              <PressScale
-                onPress={() => setShowProofOfWork(true)}
-                style={[styles.selfActionBtnOutline, { borderColor: accent }]}
-              >
-                <Text style={[styles.selfActionText, { color: accent }]}>
-                  {t('Add Proof of Work', 'काम का प्रमाण जोड़ें')}
-                </Text>
+              <PressScale onPress={() => {
+                if (!isSelf) {
+                  if (canVouch) setShowGiveVouch(true);
+                  else Alert.alert(t('Vouch not yet available', 'वाउच अभी उपलब्ध नहीं'), t("You can vouch for this worker only after you've hired them and marked the job complete. Trust the platform — trust the vouch.", "आप इस कारीगर के लिए वाउच केवल तब कर सकते हैं जब आपने उन्हें काम दिया हो और काम पूरा होने की पुष्टि की हो। भरोसा प्लेटफ़ॉर्म पर — भरोसा वाउच पर।"));
+                }
+              }}>
+                <VouchScoreRing score={displayVouchScore} size={62} accent={accent} />
               </PressScale>
             </View>
-          ) : (
-            /* Worker mode: Hire Now + 4-column row */
-            <View style={styles.workerActions}>
-              <PressScale
-                style={[
-                  styles.hireBtn,
-                  { backgroundColor: accent, shadowColor: accent },
-                ]}
-              >
-                <Text style={styles.hireBtnText}>⚡ {t('Hire Now', 'अभी काम दें')}</Text>
-              </PressScale>
 
-              <View style={styles.workerActionsRow}>
-                {/* Call */}
-                <PressScale style={styles.workerActionBtn}>
-                  <Text style={styles.workerActionEmoji}>📞</Text>
-                  <Text style={[styles.workerActionLabel, { color: Colors.shadowGrey }]}>
-                    {t('Call', 'कॉल')}
-                  </Text>
-                </PressScale>
+            <View style={styles.statDivider} />
+            <View style={styles.statRow}>
+              <StatCol value={displayJobs} label={t('Jobs', 'काम')} borderRight />
+              <StatCol value={`${displayRating}★`} label={t('Rating', 'रेटिंग')} />
+            </View>
+          </GlassCard>
 
-                {/* WhatsApp */}
-                <PressScale style={styles.workerActionBtn}>
-                  <Text style={styles.workerActionEmoji}>💬</Text>
-                  <Text style={[styles.workerActionLabel, { color: '#25D366' }]}>
-                    {t('WhatsApp', 'WhatsApp')}
-                  </Text>
-                </PressScale>
-
-                {/* Vouch */}
-                <PressScale
-                  onPress={() => setShowGiveVouch(true)}
-                  style={styles.workerActionBtn}
-                >
-                  <Text style={styles.workerActionEmoji}>🤝</Text>
-                  <Text style={[styles.workerActionLabel, { color: Colors.verifiedBlue }]}>
-                    {t('Vouch', 'वाउच')}
-                  </Text>
-                </PressScale>
-
-                {/* Save */}
-                <PressScale
-                  onPress={() => setIsSaved(s => !s)}
-                  style={styles.workerActionBtn}
-                >
-                  <Text style={styles.workerActionEmoji}>{isSaved ? '🔖' : '🔖'}</Text>
-                  <Text style={[
-                    styles.workerActionLabel,
-                    { color: isSaved ? accent : Colors.mutedText },
-                  ]}>
-                    {isSaved ? t('Saved', 'सेव किया') : t('Save', 'सेव करें')}
-                  </Text>
-                </PressScale>
+          {/* Skills */}
+          {skills.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionLabel}>{t('Skills', 'कौशल').toUpperCase()}</Text>
+              <View style={styles.skillsWrap}>
+                {skills.map((skill, idx) => (
+                  <SkillChip
+                    key={`${skill}-${idx}`}
+                    label={skill}
+                    verified={verifiedIndices.has(idx)}
+                    active={selectedSkills.has(idx)}
+                    accent={accent}
+                    onPress={() => toggleSkill(idx)}
+                  />
+                ))}
               </View>
             </View>
           )}
-        </View>
-      </ScrollView>
 
-      {/* ── Glass tab bar ───────────────────────────────────────────────────── */}
-      <BlurView
-        intensity={90}
-        tint="light"
-        style={[styles.tabBar, { bottom: Math.max(insets.bottom, 16) }]}
-      >
-        <TabItem
-          emoji="🏠"
-          label={t('Home', 'होम')}
-          active={activeTab === 0}
-          accent={accent}
-          onPress={() => setActiveTab(0)}
-        />
-        <TabItem
-          emoji="🔍"
-          label={t('Explore', 'खोजें')}
-          active={activeTab === 1}
-          accent={accent}
-          onPress={() => { setActiveTab(1); onExplore?.(); }}
-        />
-        <TabItem
-          emoji="⚙️"
-          label={t('Settings', 'सेटिंग्स')}
-          active={activeTab === 2}
-          accent={accent}
-          onPress={() => { setActiveTab(2); setShowSettings(true); }}
-        />
-      </BlurView>
+          {/* Work History */}
+          {(isSelf || workHistory.length > 0) && (
+            <View style={styles.section}>
+              <Text style={styles.sectionLabel}>{t('Work History', 'कार्य इतिहास').toUpperCase()}</Text>
+              <View style={styles.workHistoryList}>
+                {workHistory.length === 0 ? (
+                  <Text style={styles.emptyHistoryText}>
+                    {t("No work history yet. Add roles you've worked to build trust.", "अभी कोई कार्य इतिहास नहीं। भरोसा बनाने के लिए अपनी भूमिकाएँ जोड़ें।")}
+                  </Text>
+                ) : (
+                  workHistory.map((dto, idx) => (
+                    <View key={dto.id || idx} style={styles.historyRow}>
+                      <View style={styles.historyTimeline}>
+                        <View style={[styles.historyDot, { backgroundColor: idx === 0 ? accent : 'rgba(39,41,50,0.18)' }]} />
+                        {idx < workHistory.length - 1 && <View style={styles.historyLine} />}
+                      </View>
+                      <View style={styles.historyContent}>
+                        <View style={styles.historyTitleRow}>
+                          <Text style={styles.historyRole}>{dto.role}</Text>
+                          <Text style={styles.historyPeriod}>{dto.periodLabel || dto.period}</Text>
+                        </View>
+                        {!!dto.client && <Text style={[styles.historyClient, { color: accent }]}>{dto.client}</Text>}
+                        {!!dto.description && <Text style={styles.historyDesc} numberOfLines={3}>{dto.description}</Text>}
+                      </View>
+                    </View>
+                  ))
+                )}
+                {isSelf && (
+                  <PressScale onPress={() => setShowWorkHistoryEditor(true)} style={styles.addWorkHistoryBtn}>
+                    <Text style={styles.addWorkHistoryText}>+ {t('Add Work History', 'कार्य इतिहास जोड़ें')}</Text>
+                  </PressScale>
+                )}
+              </View>
+            </View>
+          )}
 
-      {/* ── Modals ──────────────────────────────────────────────────────────── */}
+          {/* Showcase Work Button */}
+          <PressScale onPress={() => setShowProofOfWork(true)} style={styles.showcaseBtn}>
+            <Text style={styles.showcaseBtnText}>▶ {t('Showcase Work', 'अपना काम दिखाएँ')}</Text>
+          </PressScale>
 
+          {/* Actions */}
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>
+              {isSelf ? t('Profile', 'प्रोफ़ाइल').toUpperCase() : t('Actions', 'कार्रवाई').toUpperCase()}
+            </Text>
+            
+            {isSelf ? (
+              <View style={styles.actionsGrid}>
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                  <PressScale style={styles.actionBtnOutline}>
+                    <Text style={[styles.actionBtnText, { color: Colors.shadowGrey }]}>📝 {t('Edit Profile', 'प्रोफ़ाइल संपादित करें')}</Text>
+                  </PressScale>
+                  <PressScale style={[styles.actionBtnFilled, { backgroundColor: accent }]}>
+                    <Text style={[styles.actionBtnText, { color: '#fff' }]}>↗️ {t('Share', 'शेयर करें')}</Text>
+                  </PressScale>
+                </View>
+                <PressScale onPress={() => setShowVoiceInterview(true)} style={[styles.actionBtnOutline, { borderColor: 'rgba(59,130,246,0.3)' }]}>
+                  <Text style={[styles.actionBtnText, { color: Colors.verifiedBlue }]}>🎙️ {t('Practice AI Interview', 'AI इंटरव्यू अभ्यास')}</Text>
+                </PressScale>
+                <PressScale onPress={() => setShowProofOfWork(true)} style={styles.actionBtnOutline}>
+                  <Text style={[styles.actionBtnText, { color: Colors.shadowGrey }]}>🎬 {t('Add Proof of Work', 'काम का सबूत जोड़ें')}</Text>
+                </PressScale>
+              </View>
+            ) : (
+              <View style={styles.actionsGrid}>
+                <PressScale onPress={requestHire} style={[styles.actionBtnFilled, { backgroundColor: accent }]}>
+                  <Text style={[styles.actionBtnText, { color: '#fff' }]}>⚡ {t('Hire Now', 'अभी काम दें')}</Text>
+                </PressScale>
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                  <PressScale onPress={() => { if (worker?.phone) Linking.openURL(`tel:${worker.phone}`) }} style={styles.actionBtnOutlineFlex}>
+                    <Text style={[styles.actionBtnTextSmall, { color: Colors.shadowGrey }]}>📞</Text>
+                    <Text style={[styles.actionBtnTextSmall, { color: Colors.shadowGrey }]}>{t('Call', 'कॉल करें')}</Text>
+                  </PressScale>
+                  <PressScale onPress={() => { if (worker?.phone) Linking.openURL(`https://wa.me/${worker.phone.replace(/\D/g, '')}`) }} style={[styles.actionBtnOutlineFlex, { borderColor: 'rgba(37,211,102,0.25)' }]}>
+                    <Text style={[styles.actionBtnTextSmall, { color: '#25D366' }]}>💬</Text>
+                    <Text style={[styles.actionBtnTextSmall, { color: '#25D366' }]}>{t('WhatsApp', 'WhatsApp')}</Text>
+                  </PressScale>
+                  <PressScale onPress={() => setShowGiveVouch(true)} style={[styles.actionBtnOutlineFlex, { borderColor: 'rgba(59,130,246,0.25)' }]}>
+                    <Text style={[styles.actionBtnTextSmall, { color: Colors.verifiedBlue }]}>🤝</Text>
+                    <Text style={[styles.actionBtnTextSmall, { color: Colors.verifiedBlue }]}>{t('Vouch', 'Vouch करें')}</Text>
+                  </PressScale>
+                  <PressScale onPress={toggleSave} style={styles.actionBtnOutlineFlex}>
+                    <Text style={[styles.actionBtnTextSmall, { color: Colors.shadowGrey }]}>{isSaved ? '🔖' : '📑'}</Text>
+                    <Text style={[styles.actionBtnTextSmall, { color: Colors.shadowGrey }]}>{isSaved ? t('Saved', 'सेव हो गया') : t('Save', 'सेव करें')}</Text>
+                  </PressScale>
+                </View>
+              </View>
+            )}
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+
+      {/* Floating Liquid Glass Tab Bar (Glass #2) */}
+      <View style={[styles.tabBarContainer, { bottom: Math.max(insets.bottom, 20) }]}>
+        <GlassCard style={styles.tabBar}>
+          <TabItem idx={1} emoji="🏠" label={t('Home', 'होम')} />
+          <TabItem idx={2} emoji="🔍" label={t('Explore', 'खोजें')} onPress={onExplore} />
+          <PressScale onPress={() => setShowAddSheet(true)} style={[styles.addBtn, { backgroundColor: accent }]}>
+            <Text style={styles.addBtnText}>+</Text>
+          </PressScale>
+          <TabItem idx={0} emoji="👤" label={t('Profile', 'प्रोफ़ाइल')} active={isSelf} accent={accent} />
+          <TabItem idx={4} emoji="⚙️" label={t('Settings', 'सेटिंग्स')} onPress={() => setShowSettings(true)} />
+        </GlassCard>
+      </View>
+
+      {/* Modals */}
       <Modal visible={showVoiceInterview} animationType="slide" presentationStyle="fullScreen">
-        <VoiceInterviewScreen
-          trade={worker?.tradeRaw || worker?.trade}
-          onClose={() => setShowVoiceInterview(false)}
-        />
+        <VoiceInterviewScreen trade={worker?.tradeRaw || worker?.trade} onClose={() => setShowVoiceInterview(false)} />
       </Modal>
 
       <Modal visible={showProofOfWork} animationType="slide" presentationStyle="fullScreen">
@@ -577,11 +439,38 @@ export default function ProfileScreen({
       </Modal>
 
       <Modal visible={showNotifications} animationType="slide" presentationStyle="fullScreen">
-        <NotificationsScreen
-          onClose={() => { setShowNotifications(false); loadProfile(); }}
-        />
+        <NotificationsScreen onClose={() => setShowNotifications(false)} />
       </Modal>
-    </SafeAreaView>
+
+      <Modal visible={showAddSheet} animationType="slide" presentationStyle="pageSheet">
+        <View style={{flex: 1, backgroundColor: Colors.canvas, padding: 24, paddingTop: 40}}>
+          <Text style={{fontSize: 22, fontWeight: '800', color: Colors.shadowGrey, marginBottom: 8}}>{t('New Job', 'नया काम')}</Text>
+          <Text style={{fontSize: 14, color: Colors.mutedText, marginBottom: 20}}>
+            {t('Post a job and connect with nearby skilled workers in minutes.', 'काम पोस्ट करें और मिनटों में आस-पास के कुशल कामगारों से जुड़ें।')}
+          </Text>
+          {['⚡ Electrical', '🔧 Plumbing', '🪚 Carpentry', '🎨 Painting'].map(item => (
+            <PressScale key={item} onPress={() => setShowAddSheet(false)} style={{backgroundColor: Colors.soft, padding: 14, borderRadius: 14, marginBottom: 10}}>
+              <Text style={{fontSize: 15, fontWeight: '600', color: Colors.shadowGrey}}>{item}</Text>
+            </PressScale>
+          ))}
+          <PressScale onPress={() => setShowAddSheet(false)} style={{marginTop: 'auto', padding: 14}}>
+            <Text style={{fontSize: 15, fontWeight: '600', color: Colors.mutedText, textAlign: 'center'}}>{t('Cancel', 'रद्द करें')}</Text>
+          </PressScale>
+        </View>
+      </Modal>
+
+      <Modal visible={showWorkHistoryEditor} animationType="slide" presentationStyle="pageSheet">
+        <View style={{flex: 1, backgroundColor: Colors.canvas, padding: 24, paddingTop: 40}}>
+           <Text style={{fontSize: 22, fontWeight: '800', color: Colors.shadowGrey, marginBottom: 8}}>{t('Add work history', 'कार्य इतिहास जोड़ें')}</Text>
+           <Text style={{fontSize: 13, color: Colors.mutedText, marginBottom: 20}}>
+             {t('Add one role at a time. You can edit or remove it later.', 'एक समय में एक भूमिका जोड़ें। आप इसे बाद में संपादित या हटा सकते हैं।')}
+           </Text>
+           <PressScale onPress={() => setShowWorkHistoryEditor(false)} style={[styles.actionBtnFilled, {backgroundColor: accent, marginTop: 'auto'}]}>
+             <Text style={[styles.actionBtnText, {color: '#fff'}]}>{t('Cancel', 'रद्द करें')}</Text>
+           </PressScale>
+        </View>
+      </Modal>
+    </View>
   );
 }
 
@@ -593,28 +482,26 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.canvas,
   },
-
-  // Header
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
+    paddingTop: 8,
     paddingBottom: 8,
-    height: 52,
   },
   headerLogo: {
     fontSize: 17,
-    fontWeight: '800',
-    letterSpacing: -0.34,
+    fontWeight: '900',
     color: Colors.shadowGrey,
+    letterSpacing: -0.3,
   },
-  notifBtn: { position: 'relative', padding: 4 },
+  notifBtn: { position: 'relative' },
   notifIcon: { fontSize: 22 },
   notifBadge: {
     position: 'absolute',
-    top: 0,
-    right: 0,
+    top: -4,
+    right: -4,
     minWidth: 16,
     height: 16,
     borderRadius: 8,
@@ -622,54 +509,36 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 4,
   },
-  notifBadgeText: { color: '#fff', fontSize: 10, fontWeight: '800' },
-  liveRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-  },
-  liveDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
-  },
-  liveText: {
-    fontSize: 14,
-    fontWeight: '600',
-    letterSpacing: -0.14,
-  },
+  notifBadgeText: { color: '#fff', fontSize: 10, fontWeight: '900' },
+  liveRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  liveDot: { width: 7, height: 7, borderRadius: 3.5 },
+  liveText: { fontSize: 14, fontWeight: '600' },
   backBtn: {
     width: 36,
     height: 36,
-    borderRadius: Radius.md,
+    borderRadius: 12,
     backgroundColor: Colors.soft,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  backArrow: {
-    fontSize: 18,
-    color: Colors.shadowGrey,
-    lineHeight: 22,
-  },
+  backArrow: { fontSize: 16, fontWeight: 'bold', color: Colors.shadowGrey },
 
-  // Scroll
   scroll: {
     paddingHorizontal: 20,
-    paddingTop: 6,
+    paddingTop: 16,
   },
 
-  // Profile card
+  // Profile Card
   profileCard: {
-    backgroundColor: Colors.white,
-    borderRadius: 24,
-    padding: 20,
+    borderRadius: 28,
+    padding: 22,
+    overflow: 'hidden',
     marginBottom: 28,
   },
   cardTop: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 14,
-    marginBottom: 16,
+    gap: 16,
+    marginBottom: 18,
   },
   avatar: {
     width: 72,
@@ -678,196 +547,140 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.22,
-    shadowRadius: 16,
-    elevation: 6,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
   },
-  avatarText: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: '#fff',
-    letterSpacing: -0.5,
-  },
-  cardInfo: {
-    flex: 1,
-    paddingTop: 2,
-    gap: 3,
-  },
-  nameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 2,
-  },
-  nameText: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: Colors.shadowGrey,
-    letterSpacing: -0.36,
-    flexShrink: 1,
-  },
-  verifiedBadge: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  verifiedCheck: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#fff',
-    lineHeight: 13,
-  },
-  tradeText: {
-    fontSize: 14,
-    color: Colors.mutedText,
-  },
-  locationText: {
-    fontSize: 13,
-    color: Colors.dimText,
-  },
-  availRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 2,
-  },
-  availDot: {
-    fontSize: 10,
-    fontWeight: '800',
-  },
-  availLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  statDivider: {
-    height: 1,
-    backgroundColor: 'rgba(39,41,50,0.08)',
-    marginBottom: 14,
-  },
-  statRow: {
-    flexDirection: 'row',
-  },
+  avatarText: { fontSize: 24, fontWeight: '900', color: '#fff' },
+  cardInfo: { flex: 1, paddingTop: 2 },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  nameText: { fontSize: 18, fontWeight: '900', color: Colors.shadowGrey, letterSpacing: -0.4 },
+  verifiedBadge: { width: 16, height: 16, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  verifiedCheck: { fontSize: 10, fontWeight: 'bold', color: '#fff' },
+  tradeText: { fontSize: 14, color: Colors.mutedText, marginBottom: 4 },
+  availRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  locationText: { fontSize: 12, color: Colors.dimText },
+  availLabel: { fontSize: 12, fontWeight: 'bold' },
+  statDivider: { height: 1, backgroundColor: 'rgba(39,41,50,0.1)' },
+  statRow: { flexDirection: 'row', paddingTop: 16 },
+  statCol: { flex: 1, alignItems: 'center' },
+  statBorderRight: { borderRightWidth: 1, borderRightColor: 'rgba(39,41,50,0.1)' },
+  statValue: { fontSize: 18, fontWeight: '900', color: '#000', letterSpacing: -0.4 },
+  statLabel: { fontSize: 11, fontWeight: '500', color: Colors.dimText, marginTop: 2 },
 
-  // Section
-  section: {
+  // Sections
+  section: { marginBottom: 28 },
+  sectionLabel: { fontSize: 11, fontWeight: '900', color: Colors.dimText, letterSpacing: 1.0, marginBottom: 12 },
+  
+  // Skills
+  skillsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
+    borderWidth: 1.5,
+  },
+  chipLabel: { fontSize: 13, fontWeight: '600' },
+  chipCheckmark: { fontSize: 11, color: Colors.verifiedBlue },
+
+  // Work History
+  workHistoryList: { gap: 18 },
+  emptyHistoryText: { fontSize: 13, color: Colors.dimText },
+  historyRow: { flexDirection: 'row', gap: 14 },
+  historyTimeline: { width: 9, alignItems: 'center', paddingTop: 5 },
+  historyDot: { width: 9, height: 9, borderRadius: 4.5 },
+  historyLine: { width: 1, flex: 1, backgroundColor: 'rgba(39,41,50,0.1)', marginTop: 4, minHeight: 36 },
+  historyContent: { flex: 1, gap: 3, paddingBottom: 10 },
+  historyTitleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  historyRole: { fontSize: 15, fontWeight: '900', color: Colors.shadowGrey },
+  historyPeriod: { fontSize: 11, fontWeight: '600', color: Colors.dimText },
+  historyClient: { fontSize: 13, fontWeight: '600', marginTop: 1 },
+  historyDesc: { fontSize: 13, color: Colors.mutedText, marginTop: 2 },
+  addWorkHistoryBtn: {
+    paddingVertical: 13,
+    borderWidth: 1.5,
+    borderColor: 'rgba(39,41,50,0.16)',
+    borderStyle: 'dashed',
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  addWorkHistoryText: { fontSize: 14, fontWeight: '600', color: Colors.dimText },
+
+  // Showcase
+  showcaseBtn: {
+    backgroundColor: Colors.shadowGrey,
+    paddingVertical: 17,
+    borderRadius: 14,
+    alignItems: 'center',
+    shadowColor: Colors.shadowGrey,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.2,
+    shadowRadius: 18,
     marginBottom: 28,
   },
-  sectionTitle: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: Colors.dimText,
-    letterSpacing: 1,
-    marginBottom: 12,
-    textTransform: 'uppercase',
-  },
+  showcaseBtnText: { color: '#fff', fontSize: 15, fontWeight: '900' },
 
-  // Skills
-  skillsWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-  },
-
-  // Work stats grid
-  workStatsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-  },
-
-  // Availability toggle
-  avContainer: {
-    flexDirection: 'row',
-    backgroundColor: Colors.soft,
-    borderRadius: 14,
-    padding: 4,
-    gap: 4,
-  },
-  avBtn: {
+  // Actions
+  actionsGrid: { gap: 10 },
+  actionBtnOutline: {
     flex: 1,
-    paddingVertical: 10,
-    borderRadius: 10,
-    alignItems: 'center',
-  },
-  avBtnText: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
-
-  // Self actions
-  selfActions: {
-    gap: 10,
-  },
-  selfActionBtn: {
-    backgroundColor: Colors.soft,
-    borderRadius: 14,
-    paddingVertical: 16,
-    alignItems: 'center',
-  },
-  selfActionBtnOutline: {
-    borderRadius: 14,
-    paddingVertical: 16,
-    alignItems: 'center',
+    paddingVertical: 15,
     borderWidth: 1.5,
-    backgroundColor: 'transparent',
+    borderColor: 'rgba(39,41,50,0.14)',
+    borderRadius: 14,
+    alignItems: 'center',
   },
-  selfActionText: {
-    fontSize: 15,
-    fontWeight: '700',
-  },
-
-  // Worker mode actions
-  workerActions: {
-    gap: 10,
-  },
-  hireBtn: {
+  actionBtnFilled: {
+    flex: 1,
     paddingVertical: 16,
     borderRadius: 14,
     alignItems: 'center',
-    justifyContent: 'center',
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.30,
-    shadowRadius: 18,
-    elevation: 8,
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
   },
-  hireBtnText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '700',
-    letterSpacing: -0.16,
-  },
-  workerActionsRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  workerActionBtn: {
+  actionBtnOutlineFlex: {
     flex: 1,
-    backgroundColor: Colors.soft,
-    borderRadius: 14,
-    paddingVertical: 12,
+    paddingVertical: 13,
+    borderWidth: 1.5,
+    borderColor: 'rgba(39,41,50,0.15)',
+    borderRadius: 12,
     alignItems: 'center',
     gap: 4,
   },
-  workerActionEmoji: {
-    fontSize: 20,
-  },
-  workerActionLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-  },
+  actionBtnText: { fontSize: 15, fontWeight: '600' },
+  actionBtnTextSmall: { fontSize: 12, fontWeight: 'bold' },
 
-  // Tab bar
-  tabBar: {
+  // Tab Bar
+  tabBarContainer: {
     position: 'absolute',
     left: 12,
     right: 12,
-    height: 68,
-    borderRadius: 24,
+    alignItems: 'center',
+  },
+  tabBar: {
     flexDirection: 'row',
     alignItems: 'center',
+    height: 68,
+    borderRadius: 34,
+    paddingHorizontal: 8,
     overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.90)',
   },
+  tabItem: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 3 },
+  tabEmoji: { fontSize: 19 },
+  tabLabel: { fontSize: 10, fontWeight: 'bold' },
+  addBtn: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.42,
+    shadowRadius: 8,
+  },
+  addBtnText: { color: '#fff', fontSize: 22, fontWeight: 'bold' },
 });

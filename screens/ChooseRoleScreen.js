@@ -10,7 +10,9 @@ import { StatusBar } from 'expo-status-bar';
 import { useTheme } from '../src/AppTheme';
 import Blobs from '../src/components/Blobs';
 import PressScale from '../src/components/PressScale';
-import { Colors, Shadow } from '../src/theme';
+import { Colors, Shadow, Glass, hexToRgba } from '../src/theme';
+import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 
 // Small chip pill used inside the professional card
 function Chip({ label, accent }) {
@@ -95,38 +97,51 @@ export default function ChooseRoleScreen({ name, goBack, goProfessional, goExplo
           )}
         </Text>
 
-        {/* Professional card */}
-        <PressScale onPress={goProfessional} scale={0.97} style={styles.card}>
-          <View style={styles.cardHeader}>
-            <Text style={styles.cardTitle}>
-              {t("I'm a Professional", 'मैं एक प्रोफेशनल हूं')}
-            </Text>
-            <ArrowCircle accent={accent} />
-          </View>
-          <Text style={styles.cardDescription}>
-            {t(
-              'Create your verified work profile. Electricians, plumbers, mechanics & 50+ trades.',
-              'अपनी सत्यापित वर्क प्रोफ़ाइल बनाएं। इलेक्ट्रीशियन, प्लंबर, मैकेनिक और 50+ काम।',
-            )}
-          </Text>
-          <View style={styles.chipRow}>
-            <Chip label={t('Free', 'मुफ्त')} accent={accent} />
-            <Chip label={t('30 sec setup', '30 सेकंड सेटअप')} accent={accent} />
-            <Chip label={t('Get hired', 'काम पाएं')} accent={accent} />
-          </View>
+        {/* Professional card - Glass */}
+        <PressScale onPress={goProfessional} scale={0.97} style={styles.proCardPress}>
+          <BlurView intensity={28} tint="light" style={styles.proCard}>
+            <View style={styles.proCardTopRow}>
+              <View style={styles.proIconBox}>
+                <LinearGradient
+                  colors={[Colors.shadowGrey, accent]}
+                  start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                  style={StyleSheet.absoluteFill}
+                  borderRadius={16}
+                />
+                <Text style={styles.proIconText}>🔧</Text>
+              </View>
+              <View style={styles.proCardTextCol}>
+                <Text style={styles.cardTitle}>{t("I'm a Professional", 'मैं एक प्रोफेशनल हूं')}</Text>
+                <Text style={styles.cardDescription}>
+                  {t(
+                    'Create your verified work profile. Electricians, plumbers, mechanics & 50+ trades.',
+                    'अपनी सत्यापित वर्क प्रोफ़ाइल बनाएं। इलेक्ट्रीशियन, प्लंबर, मैकेनिक और 50+ काम।'
+                  )}
+                </Text>
+              </View>
+              <Text style={styles.arrowIcon}>→</Text>
+            </View>
+            <View style={styles.divider} />
+            <View style={styles.chipRow}>
+              <Chip label={t('Free', 'मुफ्त')} accent={accent} />
+              <Chip label={t('30 sec setup', '30 सेकंड सेटअप')} accent={accent} />
+              <Chip label={t('Get hired', 'काम पाएं')} accent={accent} />
+            </View>
+          </BlurView>
         </PressScale>
 
-        {/* Explore card */}
-        <PressScale onPress={goExplore} scale={0.97} style={[styles.card, { marginTop: 12 }]}>
-          <Text style={styles.cardTitle}>
-            {t('Explore Workers', 'कामगार खोजें')}
-          </Text>
-          <Text style={styles.cardDescription}>
-            {t(
-              'Browse skilled professionals near you',
-              'आपके पास के कुशल प्रोफेशनल देखें',
-            )}
-          </Text>
+        {/* Explore card - Outlined */}
+        <PressScale onPress={goExplore} scale={0.97} style={[styles.exploreCard, { marginTop: 14 }]}>
+          <View style={styles.exploreIconBox}>
+            <Text style={styles.exploreIconText}>🔍</Text>
+          </View>
+          <View style={styles.proCardTextCol}>
+            <Text style={styles.exploreTitle}>{t('Explore Workers', 'कामगार खोजें')}</Text>
+            <Text style={styles.exploreDesc}>
+              {t('Browse skilled professionals near you', 'आपके पास के कुशल प्रोफेशनल देखें')}
+            </Text>
+          </View>
+          <Text style={styles.arrowIcon}>→</Text>
         </PressScale>
       </View>
     </SafeAreaView>
@@ -183,32 +198,93 @@ const styles = StyleSheet.create({
   },
 
   // Cards
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 20,
-    padding: 20,
+  proCardPress: {
+    borderRadius: 24,
+    overflow: 'hidden',
     ...Shadow.card,
   },
-  cardHeader: {
+  proCard: {
+    padding: 22,
+    backgroundColor: Glass.dark.backgroundColor,
+    borderColor: Glass.dark.borderColor,
+    borderWidth: 1,
+    borderRadius: 24,
+  },
+  proCardTopRow: {
     flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 14,
+  },
+  proIconBox: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 8,
+    justifyContent: 'center',
+  },
+  proIconText: {
+    fontSize: 24,
+  },
+  proCardTextCol: {
+    flex: 1,
   },
   cardTitle: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '800',
     color: Colors.shadowGrey,
+    letterSpacing: -0.5,
+    marginBottom: 4,
   },
   cardDescription: {
-    fontSize: 14,
+    fontSize: 13,
     color: Colors.mutedText,
-    lineHeight: 20,
+    lineHeight: 18,
+  },
+  arrowIcon: {
+    fontSize: 20,
+    color: Colors.dimText,
+    alignSelf: 'center',
+  },
+  divider: {
+    height: 1,
+    backgroundColor: 'rgba(0,0,0,0.06)',
+    marginTop: 14,
     marginBottom: 14,
   },
   chipRow: {
     flexDirection: 'row',
     gap: 8,
     flexWrap: 'wrap',
+  },
+  exploreCard: {
+    borderRadius: 20,
+    padding: 18,
+    borderWidth: 1.5,
+    borderColor: 'rgba(0,0,0,0.12)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    backgroundColor: 'transparent',
+  },
+  exploreIconBox: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: Colors.soft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  exploreIconText: {
+    fontSize: 22,
+  },
+  exploreTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: Colors.shadowGrey,
+    marginBottom: 2,
+  },
+  exploreDesc: {
+    fontSize: 13,
+    color: Colors.dimText,
   },
 });

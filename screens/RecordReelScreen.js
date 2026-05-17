@@ -7,8 +7,9 @@ import {
   Animated,
   Linking,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Audio } from 'expo-av';
@@ -17,36 +18,37 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../src/AppTheme';
 import PressScale from '../src/components/PressScale';
 import { uploadReel } from '../src/services/reelUploader';
-import { Colors, Spacing, Radius, Shadow } from '../src/theme';
+import { Colors } from '../src/theme';
 
 const MAX_DURATION = 30;
 
 const TIPS = [
   'Your trade & profession',
   'Years of experience',
-  'Best projects you've done',
+  "Best projects you've done",
   'Why clients choose you',
 ];
 
 export default function RecordReelScreen({ goBack, goDone }) {
   const { accent, t } = useTheme();
+  const insets = useSafeAreaInsets();
 
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [audioGranted, setAudioGranted] = useState(false);
   const [permissionsChecked, setPermissionsChecked] = useState(false);
 
-  const [phase, setPhase] = useState('idle'); // 'idle' | 'recording' | 'done'
+  const [phase, setPhase] = useState('idle'); // 'idle' | 'recording' | 'done' | 'failed'
   const [elapsed, setElapsed] = useState(0);
   const [recordingUri, setRecordingUri] = useState(null);
   const [uploading, setUploading] = useState(false);
-  const [uploadPct, setUploadPct] = useState(0);
+  const [uploadError, setUploadError] = useState(null);
 
   const recordingRef = useRef(null);
   const timerRef = useRef(null);
-  const pulseAnim = useRef(new Animated.Value(1)).current;
-  const pulseLoop = useRef(null);
 
-  // --- Permissions ---
+  // Use Animated.Value for progress bar
+  const progressAnim = useRef(new Animated.Value(0)).current;
+
   useEffect(() => {
     (async () => {
       const audioStatus = await Audio.requestPermissionsAsync();
@@ -56,45 +58,35 @@ export default function RecordReelScreen({ goBack, goDone }) {
       }
       setPermissionsChecked(true);
     })();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
-  // --- Pulse animation while recording ---
-  useEffect(() => {
-    if (phase === 'recording') {
-      pulseLoop.current = Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, { toValue: 1.12, duration: 600, useNativeDriver: true }),
-          Animated.timing(pulseAnim, { toValue: 1.0, duration: 600, useNativeDriver: true }),
-        ]),
-      );
-      pulseLoop.current.start();
-    } else {
-      if (pulseLoop.current) pulseLoop.current.stop();
-      Animated.spring(pulseAnim, { toValue: 1, useNativeDriver: true }).start();
-    }
-  }, [phase]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // --- Timer ---
   useEffect(() => {
     if (phase === 'recording') {
       timerRef.current = setInterval(() => {
         setElapsed(prev => {
-          if (prev + 1 >= MAX_DURATION) {
+          const next = prev + 1;
+          Animated.timing(progressAnim, {
+            toValue: next / MAX_DURATION,
+            duration: 1000,
+            useNativeDriver: false,
+          }).start();
+          if (next >= MAX_DURATION) {
             stopRecording();
             return MAX_DURATION;
           }
-          return prev + 1;
+          return next;
         });
       }, 1000);
     } else {
       clearInterval(timerRef.current);
     }
     return () => clearInterval(timerRef.current);
-  }, [phase]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [phase]);
 
   const permissionsGranted = cameraPermission?.granted && audioGranted;
 
   const startRecording = async () => {
+    setUploadError(null);
     try {
       await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
       const { recording } = await Audio.Recording.createAsync(
@@ -102,9 +94,11 @@ export default function RecordReelScreen({ goBack, goDone }) {
       );
       recordingRef.current = recording;
       setElapsed(0);
+      progressAnim.setValue(0);
       setPhase('recording');
     } catch (err) {
-      console.warn('Failed to start recording', err);
+      setUploadError('Failed to start recording');
+      setPhase('failed');
     }
   };
 
@@ -118,32 +112,28 @@ export default function RecordReelScreen({ goBack, goDone }) {
       }
       setPhase('done');
     } catch (err) {
-      console.warn('Failed to stop recording', err);
-      setPhase('done');
+      setUploadError('Failed to stop recording');
+      setPhase('failed');
     }
-  };
-
-  const handleRecordButton = () => {
-    if (phase === 'idle') startRecording();
-    else if (phase === 'recording') stopRecording();
   };
 
   const handleReRecord = () => {
     setRecordingUri(null);
     setElapsed(0);
+    progressAnim.setValue(0);
     setPhase('idle');
-    setUploadPct(0);
+    setUploadError(null);
   };
 
   const handleSubmit = async () => {
     if (!recordingUri || uploading) return;
     setUploading(true);
+    setUploadError(null);
     try {
-      await uploadReel(recordingUri, null, setUploadPct);
-      goDone();
+      await uploadReel(recordingUri, null, () => {});
+      goDone(recordingUri);
     } catch (err) {
-      console.warn('Reel upload failed', err);
-      alert(err.message || 'Upload failed');
+      setUploadError(err.message || 'Upload failed');
     } finally {
       setUploading(false);
     }
@@ -152,314 +142,355 @@ export default function RecordReelScreen({ goBack, goDone }) {
   const remaining = MAX_DURATION - elapsed;
   const timerLabel = `0:${String(remaining).padStart(2, '0')}`;
 
-  // --- Render: permissions not yet checked ---
+  const statusLabel = () => {
+    switch (phase) {
+      case 'idle': return t('Ready to record', 'रिकॉर्ड करने के लिए तैयार');
+      case 'recording': return t(`${elapsed}s recorded…`, `${elapsed}s रिकॉर्ड हो गया…`);
+      case 'done': return t(`${elapsed}s recorded`, `${elapsed}s रिकॉर्ड हो गया`);
+      case 'failed': return t('Tap to retry', 'पुनः प्रयास करें');
+      default: return '';
+    }
+  };
+
   if (!permissionsChecked) {
     return (
-      <SafeAreaView style={styles.root}>
-        <StatusBar style="dark" />
-        <ActivityIndicator size="large" color={accent} style={styles.centred} />
-      </SafeAreaView>
+      <View style={[styles.root, { alignItems: 'center', justifyContent: 'center' }]}>
+        <StatusBar style="light" />
+        <ActivityIndicator size="large" color="#fff" />
+      </View>
     );
   }
 
-  // --- Render: permissions denied ---
-  if (!permissionsGranted) {
-    return (
-      <SafeAreaView style={styles.root}>
-        <StatusBar style="dark" />
-        <View style={styles.centred}>
-          <Text style={styles.permDeniedIcon}>🎙</Text>
-          <Text style={styles.permDeniedTitle}>
-            {t('Camera & mic access required', 'कैमरा और माइक की अनुमति चाहिए')}
-          </Text>
-          <Text style={styles.permDeniedBody}>
-            {t(
-              'Allow camera and microphone access to record your skill reel.',
-              'अपना स्किल रील रिकॉर्ड करने के लिए कैमरा और माइक की अनुमति दें।',
-            )}
-          </Text>
-          <PressScale
-            onPress={() => Linking.openSettings()}
-            style={[styles.settingsBtn, { backgroundColor: accent }]}
-          >
-            <Text style={styles.settingsBtnText}>{t('Open Settings', 'सेटिंग्स खोलें')}</Text>
-          </PressScale>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  // --- Main render ---
   return (
-    <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
+    <View style={styles.root}>
       <StatusBar style="light" />
 
-      {/* Camera preview */}
-      <View style={styles.cameraWrapper}>
-        <CameraView style={StyleSheet.absoluteFill} facing="front" />
-
-        {/* Top bar: close button */}
-        <TouchableOpacity onPress={goBack} style={styles.closeBtn} activeOpacity={0.8}>
-          <Text style={styles.closeBtnText}>✕</Text>
-        </TouchableOpacity>
-
-        {/* Recording HUD */}
-        {phase === 'recording' && (
-          <View style={styles.recHud}>
-            <View style={styles.recBadge}>
-              <View style={styles.recDot} />
-              <Text style={styles.recText}>REC</Text>
-            </View>
-            <Text style={styles.timerText}>{timerLabel}</Text>
-          </View>
-        )}
-
-        {/* Idle tips overlay */}
-        {phase === 'idle' && (
-          <View style={styles.tipsOverlay}>
-            <LinearGradient
-              colors={['transparent', 'rgba(0,0,0,0.72)']}
-              style={styles.tipsGradient}
-            >
-              <Text style={styles.tipsLabel}>{t('Talk about your:', 'इनके बारे में बताएं:')}</Text>
-              {TIPS.map((tip, i) => (
-                <Text key={i} style={styles.tipBullet}>
-                  {'• '}{t(tip, tip)}
-                </Text>
-              ))}
-            </LinearGradient>
-          </View>
-        )}
-
-        {/* Done overlay */}
-        {phase === 'done' && (
-          <View style={styles.doneOverlay}>
-            <LinearGradient
-              colors={['transparent', 'rgba(0,0,0,0.80)']}
-              style={styles.doneGradient}
-            >
-              <Text style={styles.doneCheckmark}>✓</Text>
-              <Text style={styles.doneText}>
-                {t(`Reel recorded! ${elapsed}s`, `रील रिकॉर्ड हो गई! ${elapsed} सेकंड`)}
-              </Text>
-            </LinearGradient>
-          </View>
-        )}
-      </View>
-
-      {/* Bottom controls */}
-      <View style={styles.bottomControls}>
-        {phase !== 'done' ? (
-          <View style={styles.recordRow}>
-            <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
-              <TouchableOpacity
-                onPress={handleRecordButton}
-                style={[
-                  styles.recordBtn,
-                  phase === 'idle' && { backgroundColor: accent },
-                  phase === 'recording' && { backgroundColor: Colors.recordRed },
-                ]}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.recordBtnIcon}>
-                  {phase === 'idle' ? '🎙' : '⏹'}
-                </Text>
-              </TouchableOpacity>
-            </Animated.View>
-            <Text style={styles.recordHint}>
-              {phase === 'idle'
-                ? t('Tap to record', 'रिकॉर्ड करने के लिए टैप करें')
-                : t('Tap to stop', 'रोकने के लिए टैप करें')}
-            </Text>
-          </View>
+      {/* Viewfinder Area */}
+      <View style={styles.viewfinder}>
+        {permissionsGranted ? (
+          <CameraView style={StyleSheet.absoluteFill} facing="front" />
         ) : (
-          <View style={styles.doneActions}>
-            <PressScale onPress={handleReRecord} style={styles.reRecordBtn}>
-              <Text style={[styles.reRecordText, { color: accent }]}>
-                {t('Re-record', 'फिर से रिकॉर्ड करें')}
-              </Text>
-            </PressScale>
-            <PressScale
-              onPress={handleSubmit}
-              disabled={uploading}
-              style={[styles.submitBtn, { backgroundColor: accent, shadowColor: accent }, uploading && { opacity: 0.6 }]}
-            >
-              {uploading ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.submitBtnText}>
-                  {uploadPct > 0 ? `${uploadPct}%` : t('Submit Reel', 'रील सबमिट करें')}
-                </Text>
-              )}
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: Colors.shadowGrey, alignItems: 'center', justifyContent: 'center', padding: 24 }]}>
+            <Text style={{ fontSize: 32, marginBottom: 10 }}>📷</Text>
+            <Text style={{ fontSize: 15, fontWeight: '600', color: '#fff', marginBottom: 4 }}>
+              {t('Camera & mic access required', 'कैमरा और माइक की अनुमति चाहिए')}
+            </Text>
+            <Text style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', textAlign: 'center' }}>
+              {t('Enable them in Settings to record your reel.', 'रील रिकॉर्ड करने के लिए Settings में अनुमति दें।')}
+            </Text>
+            <PressScale onPress={() => Linking.openSettings()} style={{ marginTop: 20, paddingHorizontal: 20, paddingVertical: 10, backgroundColor: accent, borderRadius: 10 }}>
+              <Text style={{ color: '#fff', fontWeight: 'bold' }}>Settings</Text>
             </PressScale>
           </View>
         )}
+
+        <LinearGradient
+          colors={['rgba(0,0,0,0.55)', 'rgba(0,0,0,0.18)', 'rgba(0,0,0,0.55)']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0, y: 1 }}
+          style={StyleSheet.absoluteFill}
+          pointerEvents="none"
+        />
+
+        <SafeAreaView edges={['top']} style={styles.viewfinderContent}>
+          {/* Top Bar */}
+          <View style={styles.topBar}>
+            <TouchableOpacity onPress={goBack} style={styles.backBtn} activeOpacity={0.8}>
+              <Text style={styles.backArrow}>←</Text>
+            </TouchableOpacity>
+
+            <Text style={styles.topBarTitle}>
+              {t('Record your reel', 'अपना रील रिकॉर्ड करें')}
+            </Text>
+
+            <View style={{ width: 56, alignItems: 'flex-end' }}>
+              {phase === 'recording' && (
+                <View style={styles.recBadge}>
+                  <View style={styles.recDot} />
+                  <Text style={styles.recText}>REC</Text>
+                </View>
+              )}
+            </View>
+          </View>
+
+          <View style={styles.centerContent}>
+            {(phase === 'idle' || phase === 'failed') && (
+              <View style={styles.idleState}>
+                <View style={styles.avatarCircle}>
+                  <Text style={{ fontSize: 44 }}>👤</Text>
+                </View>
+
+                <Text style={styles.tipsHeader}>
+                  {t('Talk about your:', 'इनके बारे में बताएं:')}
+                </Text>
+
+                <View style={styles.tipsList}>
+                  {TIPS.map((tip, i) => (
+                    <View key={i} style={styles.tipRow}>
+                      <View style={[styles.tipDot, { backgroundColor: accent }]} />
+                      <Text style={styles.tipText}>{t(tip, tip)}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            )}
+
+            {phase === 'recording' && (
+              <View style={styles.recordingState}>
+                <View style={[styles.avatarCircle, { borderColor: accent, borderWidth: 3 }]}>
+                  <Text style={{ fontSize: 44 }}>👤</Text>
+                </View>
+                <Text style={styles.timerLarge}>{timerLabel}</Text>
+                <Text style={styles.timerSub}>
+                  {t('seconds remaining · tap to stop', 'सेकंड बचे · रोकने के लिए टैप करें')}
+                </Text>
+              </View>
+            )}
+
+            {phase === 'done' && (
+              <View style={styles.doneState}>
+                <Text style={styles.doneIcon}>✓</Text>
+                <Text style={styles.doneTitle}>{t('Reel recorded!', 'रील रिकॉर्ड हो गया!')}</Text>
+                <Text style={styles.doneSub}>
+                  {t(`${elapsed}s · ready to submit`, `${elapsed}s · सबमिट के लिए तैयार`)}
+                </Text>
+              </View>
+            )}
+          </View>
+        </SafeAreaView>
       </View>
-    </SafeAreaView>
+
+      {/* Controls Sheet */}
+      <View style={[styles.controlsSheet, { paddingBottom: Math.max(insets.bottom, 36) }]}>
+        <View style={styles.progressBarBg}>
+          <Animated.View
+            style={[
+              styles.progressBarFill,
+              {
+                backgroundColor: accent,
+                width: progressAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: ['0%', '100%']
+                })
+              }
+            ]}
+          />
+        </View>
+
+        <View style={styles.statusRow}>
+          <Text style={styles.statusLabel}>{statusLabel()}</Text>
+          <Text style={styles.statusMax}>{t('0:30 max', '0:30 अधिकतम')}</Text>
+        </View>
+
+        {uploadError && (
+          <Text style={styles.errorText}>{uploadError}</Text>
+        )}
+
+        <View style={styles.buttonsWrap}>
+          {(phase === 'idle' || phase === 'failed') && (
+            <PressScale
+              onPress={startRecording}
+              disabled={!permissionsGranted}
+              style={[
+                styles.primaryBtn,
+                { backgroundColor: permissionsGranted ? accent : 'rgba(255,255,255,0.4)' }
+              ]}
+            >
+              <Text style={styles.primaryBtnText}>● {t('Start Recording', 'रिकॉर्डिंग शुरू करें')}</Text>
+            </PressScale>
+          )}
+
+          {phase === 'recording' && (
+            <PressScale
+              onPress={stopRecording}
+              style={[styles.primaryBtn, { backgroundColor: '#E63946' }]}
+            >
+              <Text style={styles.primaryBtnText}>■ {t('Stop Recording', 'रिकॉर्डिंग रोकें')}</Text>
+            </PressScale>
+          )}
+
+          {phase === 'done' && (
+            <View style={styles.doneActionsRow}>
+              <PressScale onPress={handleReRecord} style={styles.reRecordBtn}>
+                <Text style={styles.reRecordText}>{t('Re-record', 'फिर से रिकॉर्ड करें')}</Text>
+              </PressScale>
+
+              <PressScale
+                onPress={handleSubmit}
+                disabled={uploading}
+                style={[styles.submitBtn, { backgroundColor: accent }, uploading && { opacity: 0.6 }]}
+              >
+                {uploading ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <Text style={styles.submitBtnText}>{t('Submit Reel', 'रील सबमिट करें')}</Text>
+                )}
+              </PressScale>
+            </View>
+          )}
+        </View>
+      </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#000',
+    backgroundColor: Colors.shadowGrey,
   },
-  centred: {
+  viewfinder: {
     flex: 1,
+    position: 'relative',
+  },
+  viewfinderContent: {
+    flex: 1,
+    justifyContent: 'space-between',
+  },
+  topBar: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 32,
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 12,
   },
-
-  // Permissions denied
-  permDeniedIcon: { fontSize: 48, marginBottom: 16 },
-  permDeniedTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: Colors.shadowGrey,
-    textAlign: 'center',
-    marginBottom: 10,
-  },
-  permDeniedBody: {
-    fontSize: 15,
-    color: Colors.mutedText,
-    textAlign: 'center',
-    lineHeight: 22,
-    marginBottom: 28,
-  },
-  settingsBtn: {
-    paddingVertical: 14,
-    paddingHorizontal: 32,
-    borderRadius: Radius.lg,
-    ...Shadow.button,
-  },
-  settingsBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
-
-  // Camera
-  cameraWrapper: {
-    flex: 1,
-    borderRadius: Radius.xl,
-    overflow: 'hidden',
-    margin: Spacing.md,
-  },
-  closeBtn: {
-    position: 'absolute',
-    top: 14,
-    left: 14,
+  backBtn: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(0,0,0,0.45)',
+    backgroundColor: 'rgba(255,255,255,0.18)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  closeBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
-
-  // REC HUD
-  recHud: {
-    position: 'absolute',
-    top: 14,
-    right: 14,
-    alignItems: 'flex-end',
-    gap: 4,
+  backArrow: { fontSize: 16, fontWeight: 'bold', color: '#fff' },
+  topBarTitle: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: 'rgba(255,255,255,0.85)',
   },
   recBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.recordRed,
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
     gap: 5,
   },
-  recDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#fff' },
-  recText: { color: '#fff', fontSize: 12, fontWeight: '800', letterSpacing: 1 },
-  timerText: {
-    color: '#fff',
-    fontSize: 22,
-    fontWeight: '700',
-    textShadowColor: 'rgba(0,0,0,0.5)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
-  },
+  recDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#E63946' },
+  recText: { fontSize: 12, fontWeight: '900', color: '#E63946' },
 
-  // Tips
-  tipsOverlay: { position: 'absolute', bottom: 0, left: 0, right: 0 },
-  tipsGradient: { paddingTop: 48, paddingBottom: 20, paddingHorizontal: 20 },
-  tipsLabel: {
-    color: 'rgba(255,255,255,0.75)',
-    fontSize: 12,
-    fontWeight: '600',
-    letterSpacing: 0.5,
-    marginBottom: 6,
-    textTransform: 'uppercase',
-  },
-  tipBullet: { color: '#fff', fontSize: 15, fontWeight: '500', lineHeight: 24 },
-
-  // Done overlay
-  doneOverlay: { position: 'absolute', inset: 0 },
-  doneGradient: {
-    flex: 1,
+  centerContent: {
     alignItems: 'center',
-    justifyContent: 'flex-end',
-    paddingBottom: 28,
+    paddingHorizontal: 28,
   },
-  doneCheckmark: { fontSize: 52, color: '#4ade80', marginBottom: 8 },
-  doneText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '700',
-    textShadowColor: 'rgba(0,0,0,0.5)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
-  },
-
-  // Bottom controls
-  bottomControls: {
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: 20,
-    alignItems: 'center',
-  },
-  recordRow: { alignItems: 'center', gap: 10 },
-  recordBtn: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
+  avatarCircle: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
     alignItems: 'center',
     justifyContent: 'center',
-    ...Shadow.button,
-    shadowColor: '#000',
   },
-  recordBtnIcon: { fontSize: 28 },
-  recordHint: {
-    color: Colors.dimText,
+  
+  // Idle State
+  idleState: { alignItems: 'center', width: '100%' },
+  tipsHeader: { fontSize: 14, fontWeight: '500', color: 'rgba(255,255,255,0.5)', marginTop: 28, marginBottom: 12 },
+  tipsList: { width: '100%' },
+  tipRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.08)' },
+  tipDot: { width: 6, height: 6, borderRadius: 3, marginRight: 10, opacity: 0.7 },
+  tipText: { fontSize: 14, color: 'rgba(255,255,255,0.7)' },
+
+  // Recording State
+  recordingState: { alignItems: 'center' },
+  timerLarge: { fontSize: 56, fontWeight: '900', color: '#fff', letterSpacing: -2.5, marginTop: 20 },
+  timerSub: { fontSize: 13, color: 'rgba(255,255,255,0.5)', marginTop: 6 },
+
+  // Done State
+  doneState: { alignItems: 'center' },
+  doneIcon: { fontSize: 48, color: '#fff', marginBottom: 4 },
+  doneTitle: { fontSize: 20, fontWeight: '900', color: '#fff', letterSpacing: -0.6 },
+  doneSub: { fontSize: 13, color: 'rgba(255,255,255,0.55)', marginTop: 6 },
+
+  // Controls Sheet
+  controlsSheet: {
+    backgroundColor: Colors.canvas,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingHorizontal: 24,
+    paddingTop: 22,
+  },
+  progressBarBg: {
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: 'rgba(39,41,50,0.1)',
+    marginBottom: 12,
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    borderRadius: 2.5,
+  },
+  statusRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 22,
+  },
+  statusLabel: { fontSize: 13, fontWeight: '500', color: Colors.mutedText },
+  statusMax: { fontSize: 13, color: Colors.dimText },
+
+  errorText: {
     fontSize: 13,
-    fontWeight: '500',
-    marginTop: 6,
+    fontWeight: '600',
+    color: '#E63946',
+    marginBottom: 14,
   },
 
-  // Done actions
-  doneActions: {
-    flexDirection: 'row',
-    gap: 12,
+  buttonsWrap: {
     width: '100%',
+  },
+  primaryBtn: {
+    width: '100%',
+    paddingVertical: 17,
+    borderRadius: 16,
+    alignItems: 'center',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+  },
+  primaryBtnText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+
+  doneActionsRow: {
+    flexDirection: 'row',
+    gap: 10,
   },
   reRecordBtn: {
     flex: 1,
-    paddingVertical: 15,
-    borderRadius: Radius.lg,
-    alignItems: 'center',
+    paddingVertical: 16,
+    borderRadius: 14,
     borderWidth: 1.5,
-    borderColor: 'rgba(39,41,50,0.18)',
-    backgroundColor: Colors.soft,
-  },
-  reRecordText: { fontSize: 15, fontWeight: '700' },
-  submitBtn: {
-    flex: 2,
-    paddingVertical: 15,
-    borderRadius: Radius.lg,
+    borderColor: 'rgba(39,41,50,0.14)',
     alignItems: 'center',
-    ...Shadow.button,
   },
-  submitBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  reRecordText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: Colors.shadowGrey,
+  },
+  submitBtn: {
+    flex: 1,
+    paddingVertical: 16,
+    borderRadius: 14,
+    alignItems: 'center',
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+  },
+  submitBtnText: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
 });

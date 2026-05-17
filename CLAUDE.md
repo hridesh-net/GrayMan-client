@@ -12,6 +12,35 @@ The repo has two parallel codebases:
 
 All active development is in `ios/GrayMan.swiftpm/`.
 
+## Directory layout
+
+Feature-first hybrid. SwiftPM scans `path: "."` recursively, so subdirectories work without manifest changes. `Info.plist`, `PrivacyInfo.xcprivacy`, and `Package.swift` stay at the bundle root.
+
+```
+ios/GrayMan.swiftpm/
+├── App/                 GrayManApp (entry + Screen enum) · ColorPanel (debug overlay)
+├── Core/
+│   ├── DesignSystem/    DesignSystem · Theme
+│   ├── Networking/      APIClient
+│   ├── Location/        LocationService
+│   ├── Media/           ImageUploader · Reel{Compression,Player,Transcriber,Uploader}
+│   └── Voice/           VoiceGuide · GeminiLiveVoiceGuide
+├── Models/              Worker · WorkerDTO
+├── Services/            WorkerService
+└── Features/
+    ├── Onboarding/      OnboardingView · NameEntryView · AvatarPickerView · ChooseRoleView
+    ├── Auth/            PhoneAuth · PhoneAuthView
+    ├── Home/            HomeView · HomeViewModel · CreatePostSheet
+    ├── Profile/         ProfileView · ProfileViewModel · EditProfileSheet · ProofOfWorkView · SettingsView
+    ├── Explore/         ExploreView · ExploreViewModel
+    ├── Reel/            Recording · RecordReelView
+    ├── Vouch/           GiveVouchSheet
+    ├── Interview/       InterviewSession · VoiceInterviewView
+    └── Notifications/   NotificationsView
+```
+
+`Core/` is reusable infra (zero feature imports). `Features/` types may import `Core/`, `Models/`, `Services/` but not each other — cross-feature communication happens through callbacks injected by `GrayManApp`.
+
 ## Build and type-check
 
 There is no Xcode project file. The app is a SwiftPM `.swiftpm` package opened directly in Swift Playgrounds or Xcode. To type-check from the terminal:
@@ -20,15 +49,12 @@ There is no Xcode project file. The app is a SwiftPM `.swiftpm` package opened d
 cd ios/GrayMan.swiftpm
 
 # Type-check (excludes Package.swift which uses PackageDescription, not app SDK)
-xcrun -sdk iphoneos swiftc -typecheck \
-  -target arm64-apple-ios26.0 \
-  -parse-as-library \
-  -strict-concurrency=complete \
-  ChooseRoleView.swift ColorPanel.swift DesignSystem.swift ExploreView.swift \
-  GiveVouchSheet.swift GrayManApp.swift NameEntryView.swift OnboardingView.swift \
-  PhoneAuth.swift PhoneAuthView.swift ProfileView.swift ProofOfWorkView.swift \
-  Recording.swift RecordReelView.swift SettingsView.swift Theme.swift \
-  VoiceInterviewView.swift Worker.swift 2>&1
+find App Core Models Services Features -name '*.swift' -type f -print0 | \
+  xargs -0 xcrun -sdk iphoneos swiftc -typecheck \
+    -target arm64-apple-ios26.0 \
+    -parse-as-library \
+    -strict-concurrency=complete \
+    2>&1
 ```
 
 Clean output (no stdout) = success. There are no unit tests yet.

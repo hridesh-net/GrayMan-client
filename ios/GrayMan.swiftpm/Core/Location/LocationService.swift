@@ -103,6 +103,20 @@ final class LocationService: NSObject {
         }
     }
 
+    /// Last-known fix, returned synchronously without ever waiting for
+    /// GPS. May come from the persisted UserDefaults cache (so it's
+    /// available even on the very first call after a relaunch) or from
+    /// the in-memory cache filled by `didUpdateLocations`. Returns nil
+    /// only when the device has never produced a fix for this app.
+    ///
+    /// Use this when the caller just needs *some* coordinates for a
+    /// non-blocking secondary computation (e.g. distance-from-me on a
+    /// fetched worker) and absolutely cannot afford to stall on a cold
+    /// GPS lock — i.e. anywhere a 15-second wait would degrade UX.
+    var lastKnown: (lat: Double, lng: Double)? {
+        cached.map { (lat: $0.lat, lng: $0.lng) }
+    }
+
     /// Best-effort current location. Never throws. Never hangs longer than
     /// ``fixTimeout``.
     func current() async -> (lat: Double, lng: Double) {

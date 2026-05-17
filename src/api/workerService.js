@@ -56,7 +56,7 @@ export const workerService = {
 
   verifyOTP(phone, code) {
     return request('POST', '/auth/otp/verify', {
-      body: { phone, code },
+      body: { phone, otp: code },
       authenticated: false,
     });
   },

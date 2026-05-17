@@ -567,12 +567,14 @@ struct WorkerUpdateRequest: Encodable {
     var city: String?
     var lat: Double?
     var lng: Double?
+    var avatarURL: String?
 
     enum CodingKeys: String, CodingKey {
         case name, trade, bio
         case skillTags = "skill_tags"
         case verifiedTagIndices = "verified_tag_indices"
         case city, lat, lng
+        case avatarURL = "avatar_url"
     }
 }
 
@@ -603,6 +605,66 @@ struct VouchDTO: Decodable, Hashable, Sendable {
         case skillIndices = "skill_indices"
         case voiceNoteURL = "voice_note_url"
         case createdAt = "created_at"
+    }
+}
+
+// MARK: - Posts (Home feed)
+
+struct PostAuthorDTO: Decodable, Hashable, Sendable, Identifiable {
+    let id: String
+    let name: String
+    let trade: String
+    let avatarURL: String?
+    let isVerified: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, trade
+        case avatarURL = "avatar_url"
+        case isVerified = "is_verified"
+    }
+}
+
+struct PostDTO: Decodable, Hashable, Sendable, Identifiable {
+    let id: String
+    let author: PostAuthorDTO
+    let body: String
+    let imageURL: String?
+    let lat: Double?
+    let lng: Double?
+    let createdAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id, author, body, lat, lng
+        case imageURL = "image_url"
+        case createdAt = "created_at"
+    }
+}
+
+struct PostCreateRequest: Encodable {
+    let body: String
+    let imageURL: String?
+    let lat: Double?
+    let lng: Double?
+
+    enum CodingKeys: String, CodingKey {
+        case body, lat, lng
+        case imageURL = "image_url"
+    }
+}
+
+struct PresignedUploadDTO: Decodable, Sendable {
+    let uploadURL: String
+    let key: String
+    let publicURL: String
+    let contentType: String
+    let expiresIn: Int
+
+    enum CodingKeys: String, CodingKey {
+        case uploadURL = "upload_url"
+        case key
+        case publicURL = "public_url"
+        case contentType = "content_type"
+        case expiresIn = "expires_in"
     }
 }
 
@@ -687,7 +749,8 @@ extension Worker {
             emoji: style.emoji,
             gradientStartHex: style.startHex,
             gradientEndHex: style.endHex,
-            isVerified: dto.isVerified ?? false
+            isVerified: dto.isVerified ?? false,
+            avatarURL: dto.avatarURL
         )
     }
 }
