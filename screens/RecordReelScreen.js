@@ -11,8 +11,11 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { CameraView, useCameraPermissions } from 'expo-camera';
-import { Audio } from 'expo-av';
+import {
+  CameraView,
+  useCameraPermissions,
+  useMicrophonePermissions,
+} from 'expo-camera';
 import { LinearGradient } from 'expo-linear-gradient';
 
 import { useTheme } from '../src/AppTheme';
@@ -34,7 +37,7 @@ export default function RecordReelScreen({ goBack, goDone }) {
   const insets = useSafeAreaInsets();
 
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
-  const [audioGranted, setAudioGranted] = useState(false);
+  const [micPermission, requestMicPermission] = useMicrophonePermissions();
   const [permissionsChecked, setPermissionsChecked] = useState(false);
 
   const [phase, setPhase] = useState('idle'); // 'idle' | 'recording' | 'done' | 'failed'
@@ -43,7 +46,8 @@ export default function RecordReelScreen({ goBack, goDone }) {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState(null);
 
-  const recordingRef = useRef(null);
+  const cameraRef = useRef(null);
+  const recordingPromiseRef = useRef(null);
   const timerRef = useRef(null);
 
   // Use Animated.Value for progress bar
@@ -51,10 +55,11 @@ export default function RecordReelScreen({ goBack, goDone }) {
 
   useEffect(() => {
     (async () => {
-      const audioStatus = await Audio.requestPermissionsAsync();
-      setAudioGranted(audioStatus.status === 'granted');
       if (!cameraPermission?.granted) {
         await requestCameraPermission();
+      }
+      if (!micPermission?.granted) {
+        await requestMicPermission();
       }
       setPermissionsChecked(true);
     })();
@@ -83,34 +88,54 @@ export default function RecordReelScreen({ goBack, goDone }) {
     return () => clearInterval(timerRef.current);
   }, [phase]);
 
-  const permissionsGranted = cameraPermission?.granted && audioGranted;
+  const permissionsGranted = cameraPermission?.granted && micPermission?.granted;
 
+  // Real video recording via expo-camera v15+ — captures a single
+  // MP4 (H.264 + AAC) with rotation baked into pixels by the camera
+  // service itself. The previous implementation used expo-av's
+  // Audio.Recording, which records ONLY audio (M4A/AAC); the resulting
+  // file was uploaded as 'video/mp4' but had no video stream, so the
+  // server's HLS transcode produced variants with audio-only — exactly
+  // why playback showed sound with a blank screen.
   const startRecording = async () => {
     setUploadError(null);
-    try {
-      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
-      const { recording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY,
-      );
-      recordingRef.current = recording;
-      setElapsed(0);
-      progressAnim.setValue(0);
-      setPhase('recording');
-    } catch (err) {
-      setUploadError('Failed to start recording');
+    if (!cameraRef.current) {
+      setUploadError('Camera not ready');
       setPhase('failed');
+      return;
+    }
+    setElapsed(0);
+    progressAnim.setValue(0);
+    setPhase('recording');
+
+    try {
+      // recordAsync returns a promise that resolves when stopRecording()
+      // is called (or maxDuration elapses on its own).
+      const promise = cameraRef.current.recordAsync({
+        maxDuration: MAX_DURATION,
+      });
+      recordingPromiseRef.current = promise;
+      const result = await promise;
+      if (result?.uri) {
+        setRecordingUri(result.uri);
+        setPhase('done');
+      } else {
+        setUploadError('Recording produced no file');
+        setPhase('failed');
+      }
+    } catch (err) {
+      setUploadError(`Recording failed: ${err.message || err}`);
+      setPhase('failed');
+    } finally {
+      recordingPromiseRef.current = null;
     }
   };
 
   const stopRecording = async () => {
     try {
-      if (recordingRef.current) {
-        await recordingRef.current.stopAndUnloadAsync();
-        const uri = recordingRef.current.getURI();
-        setRecordingUri(uri);
-        recordingRef.current = null;
+      if (cameraRef.current) {
+        await cameraRef.current.stopRecording();
       }
-      setPhase('done');
     } catch (err) {
       setUploadError('Failed to stop recording');
       setPhase('failed');
@@ -168,7 +193,13 @@ export default function RecordReelScreen({ goBack, goDone }) {
       {/* Viewfinder Area */}
       <View style={styles.viewfinder}>
         {permissionsGranted ? (
-          <CameraView style={StyleSheet.absoluteFill} facing="front" />
+          <CameraView
+            ref={cameraRef}
+            style={StyleSheet.absoluteFill}
+            facing="front"
+            mode="video"
+            videoQuality="720p"
+          />
         ) : (
           <View style={[StyleSheet.absoluteFill, { backgroundColor: Colors.shadowGrey, alignItems: 'center', justifyContent: 'center', padding: 24 }]}>
             <Text style={{ fontSize: 32, marginBottom: 10 }}>📷</Text>

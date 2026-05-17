@@ -109,14 +109,35 @@ final class ReelCompressor {
             throw ReelCompressionError.noVideoTrack
         }
         let transform = try await videoTrack.load(.preferredTransform)
+        let naturalSize = try await videoTrack.load(.naturalSize)
+        let nominalFrameRate = try await videoTrack.load(.nominalFrameRate)
 
-        // The phone records portrait → preferredTransform encodes the
-        // 90° rotation. We swap output W/H so HEVC encodes the portrait
-        // frame directly instead of letterboxing.
-        let isPortrait = (transform.b == 1 && transform.c == -1)
-                      || (transform.b == -1 && transform.c == 1)
-        let outW = isPortrait ? rung.width : rung.height
-        let outH = isPortrait ? rung.height : rung.width
+        // ---- Display-orientation calculation ------------------------
+        //
+        // Two ways the source can be portrait:
+        //
+        //   (a) `preferredTransform` encodes a 90/270° rotation — the
+        //       legacy iOS pipeline path. naturalSize is landscape but
+        //       the transform tells the renderer to rotate.
+        //
+        //   (b) `AVCaptureConnection.videoRotationAngle = 90` was set at
+        //       capture time (Recording.swift). Frames come out of the
+        //       camera ALREADY rotated — naturalSize is portrait and the
+        //       preferredTransform is identity.
+        //
+        // The previous code only checked (a) which is why modern iOS-17+
+        // recordings squished into a landscape canvas.
+        //
+        // We compute the actual displayed-pixel rectangle by applying the
+        // transform to naturalSize, then take absolute width/height.
+        let displayRect = CGRect(origin: .zero, size: naturalSize)
+            .applying(transform)
+        let displayW = max(1, abs(displayRect.size.width))
+        let displayH = max(1, abs(displayRect.size.height))
+        let displayPortrait = displayH > displayW
+
+        let outW = displayPortrait ? rung.width  : rung.height
+        let outH = displayPortrait ? rung.height : rung.width
 
         let writer: AVAssetWriter
         do {
@@ -127,13 +148,22 @@ final class ReelCompressor {
         writer.shouldOptimizeForNetworkUse = true   // moov atom at the front
 
         // --- Video ---
+        //
+        // We use HEVC for the upload format (≈40% smaller than equivalent
+        // H.264 — critical for slow uplink on 3G/Tier-3 networks) AND we
+        // bake the rotation into the pixel data via AVMutableVideoComposition.
+        // This means the OUTPUT MP4 has visually-portrait frames at portrait
+        // dimensions with NO rotation metadata required — works correctly
+        // through every downstream pipeline (server FFmpeg, Android
+        // ExoPlayer, web HLS players) which historically mishandle the
+        // display-matrix metadata.
         let videoSettings: [String: Any] = [
             AVVideoCodecKey: AVVideoCodecType.hevc,
             AVVideoWidthKey: outW,
             AVVideoHeightKey: outH,
             AVVideoCompressionPropertiesKey: [
                 AVVideoAverageBitRateKey:           rung.videoKbps * 1_000,
-                AVVideoMaxKeyFrameIntervalKey:      60,       // 1 keyframe/2s @ 30fps
+                AVVideoMaxKeyFrameIntervalKey:      60,
                 AVVideoProfileLevelKey:             kVTProfileLevel_HEVC_Main_AutoLevel as String,
                 AVVideoAllowFrameReorderingKey:     true,
                 AVVideoExpectedSourceFrameRateKey:  30,
@@ -144,6 +174,10 @@ final class ReelCompressor {
         }
         let videoInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
         videoInput.expectsMediaDataInRealTime = false
+        // Identity transform on the writer — we've already baked rotation
+        // and scaling into the source frames via the videoComposition below,
+        // so the output MP4 doesn't need a display matrix.
+        videoInput.transform = .identity
         if writer.canAdd(videoInput) { writer.add(videoInput) }
 
         // --- Audio ---
@@ -166,11 +200,55 @@ final class ReelCompressor {
         }
 
         // --- Reader ---
+        //
+        // AVAssetReaderVideoCompositionOutput + AVMutableVideoComposition
+        // is what bakes the rotation / scaling into the decoded pixel
+        // buffers BEFORE they reach the encoder. Result: output frames are
+        // already in display orientation at the target resolution; the
+        // encoder just compresses, no metadata gymnastics needed.
         let reader = try AVAssetReader(asset: asset)
-        let videoReaderSettings: [String: Any] = [
-            kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_420YpCbCr8BiPlanarFullRange),
-        ]
-        let videoOutput = AVAssetReaderTrackOutput(track: videoTrack, outputSettings: videoReaderSettings)
+
+        let composition = AVMutableVideoComposition()
+        composition.renderSize = CGSize(width: outW, height: outH)
+        let fps: Float = nominalFrameRate > 0 ? min(30, nominalFrameRate) : 30
+        composition.frameDuration = CMTime(value: 1, timescale: CMTimeScale(fps))
+
+        // Single instruction covering the full asset duration.
+        let assetDuration = try await asset.load(.duration)
+        let instruction = AVMutableVideoCompositionInstruction()
+        instruction.timeRange = CMTimeRange(start: .zero, duration: assetDuration)
+
+        // Layer instruction — combines the source's preferredTransform
+        // (handles legacy iOS rotation metadata case) with a uniform
+        // scale that fits the rotated frame into renderSize.
+        let layer = AVMutableVideoCompositionLayerInstruction(assetTrack: videoTrack)
+        let scaleX = CGFloat(outW) / displayW
+        let scaleY = CGFloat(outH) / displayH
+        let scale = min(scaleX, scaleY)
+        let scaled = transform.concatenating(
+            CGAffineTransform(scaleX: scale, y: scale)
+        )
+        // Centre after scaling — handles any letterbox case.
+        let scaledW = displayW * scale
+        let scaledH = displayH * scale
+        let centred = scaled.concatenating(
+            CGAffineTransform(
+                translationX: (CGFloat(outW) - scaledW) / 2,
+                y: (CGFloat(outH) - scaledH) / 2
+            )
+        )
+        layer.setTransform(centred, at: .zero)
+        instruction.layerInstructions = [layer]
+        composition.instructions = [instruction]
+
+        let videoOutput = AVAssetReaderVideoCompositionOutput(
+            videoTracks: videoTracks,
+            videoSettings: [
+                kCVPixelBufferPixelFormatTypeKey as String:
+                    Int(kCVPixelFormatType_420YpCbCr8BiPlanarFullRange),
+            ]
+        )
+        videoOutput.videoComposition = composition
         videoOutput.alwaysCopiesSampleData = false
         if reader.canAdd(videoOutput) { reader.add(videoOutput) }
 
@@ -216,7 +294,9 @@ final class ReelCompressor {
         reader: AVAssetReader,
         writer: AVAssetWriter,
         videoInput: AVAssetWriterInput,
-        videoOutput: AVAssetReaderTrackOutput,
+        videoOutput: AVAssetReaderOutput,         // base class — covers
+                                                  // both AVAssetReaderTrackOutput
+                                                  // and AVAssetReaderVideoCompositionOutput
         audioInput: AVAssetWriterInput?,
         audioOutput: AVAssetReaderTrackOutput?
     ) async throws {

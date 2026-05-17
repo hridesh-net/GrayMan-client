@@ -129,18 +129,38 @@ final class HomeViewModel {
 
     // MARK: - Derive experience years
 
-    /// Pick the earliest 4-digit year from the worker's `period_label`
-    /// list (e.g. "2022 — Now", "2017 – 20") and return (today.year - earliest).
-    /// Returns 0 if no years can be parsed.
+    /// Total years derived purely from user-entered work history. Two
+    /// strategies, in priority order:
+    ///   1. If `startDate` is set on any entry (YYYY-MM-DD from the
+    ///      Month/Year picker), use it directly. More accurate than
+    ///      parsing free text.
+    ///   2. Fall back to scanning `periodLabel` for the earliest
+    ///      4-digit year — handles legacy entries written before the
+    ///      pickers existed.
+    ///
+    /// Returns 0 when the worker has added no history. The reel
+    /// analysis NEVER contributes to this number — experience is an
+    /// explicit user statement, not an AI inference.
     static func experienceYears(fromHistory history: [WorkHistoryDTO]) -> Int {
         var earliest = Int.max
+
         for entry in history {
+            // Strategy 1 — structured start date.
+            if let raw = entry.startDate, raw.count >= 4,
+               let yr = Int(raw.prefix(4)),
+               yr >= 1970, yr <= 2100, yr < earliest {
+                earliest = yr
+                continue
+            }
+            // Strategy 2 — parse the label.
             for token in entry.periodLabel.split(whereSeparator: { !$0.isNumber }) {
-                if token.count == 4, let yr = Int(token), yr >= 1970, yr <= 2100, yr < earliest {
+                if token.count == 4, let yr = Int(token),
+                   yr >= 1970, yr <= 2100, yr < earliest {
                     earliest = yr
                 }
             }
         }
+
         guard earliest != .max else { return 0 }
         let thisYear = Calendar.current.component(.year, from: Date())
         return max(0, thisYear - earliest)

@@ -45,7 +45,7 @@ final class WorkerService {
         trade: String? = nil,
         radiusKm: Double,
         page: Int = 1,
-        limit: Int = 30
+        limit: Int = 30,
     ) async throws -> [Worker] {
         let (lat, lng) = await LocationService.shared.current()
         var query: [URLQueryItem] = [
@@ -54,6 +54,9 @@ final class WorkerService {
             URLQueryItem(name: "radius_km", value: String(radiusKm)),
             URLQueryItem(name: "page",      value: String(page)),
             URLQueryItem(name: "limit",     value: String(limit)),
+            // Reel feed surface — never show workers who haven't
+            // uploaded a reel, so the discovery scroll is always video.
+            URLQueryItem(name: "has_reel",  value: "true"),
         ]
         if let trade, trade != "All" {
             query.append(URLQueryItem(name: "trade", value: trade))

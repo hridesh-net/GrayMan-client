@@ -13,8 +13,6 @@ struct RecordReelView: View {
     let goDone: (URL?) -> Void
 
     @State private var model: RecordReelViewModel
-    @State private var uploading: Bool = false
-    @State private var uploadError: String? = nil
 
     private var tips: [String] {
         [
@@ -356,28 +354,27 @@ struct RecordReelView: View {
                 .buttonStyle(PressScaleStyle(scale: 0.96))
                 .accessibilityLabel(theme.t("Re-record reel", "रील फिर से रिकॉर्ड करें"))
 
+                // Submit is now instant — submitReel hands the raw
+                // recording to OfflineReelQueue and immediately calls
+                // goDone. No spinner, no disabled state, no blocked
+                // button. Compression + upload happen in the
+                // background; ProfileView shows progress.
                 Button {
                     submitReel()
                 } label: {
-                    HStack(spacing: 8) {
-                        if uploading { ProgressView().controlSize(.small).tint(.white) }
-                        Text(uploading
-                             ? theme.t("Uploading…", "अपलोड हो रहा है…")
-                             : theme.t("Submit Reel", "रील सबमिट करें"))
-                            .scaledFont(size: 15, weight: .bold, relativeTo: .body)
-                    }
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
-                    .background(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .fill(theme.accent)
-                    )
-                    .shadow(color: theme.accent.opacity(0.34),
-                            radius: 10, x: 0, y: 5)
+                    Text(theme.t("Submit Reel", "रील सबमिट करें"))
+                        .scaledFont(size: 15, weight: .bold, relativeTo: .body)
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                        .background(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .fill(theme.accent)
+                        )
+                        .shadow(color: theme.accent.opacity(0.34),
+                                radius: 10, x: 0, y: 5)
                 }
                 .buttonStyle(PressScaleStyle(scale: 0.97))
-                .disabled(uploading)
                 .accessibilityLabel(theme.t("Submit reel", "रील सबमिट करें"))
             }
         }
@@ -395,45 +392,27 @@ struct RecordReelView: View {
     }
 
     private var errorMessage: String? {
-        if let uploadError { return uploadError }
+        // No more in-flight upload error to surface here — submit is
+        // non-blocking and any post-submit error surfaces in the
+        // OfflineReelQueue banner on the Profile screen.
         if case .failed(let msg) = model.phase { return msg }
         return nil
     }
 
     private func submitReel() {
-        // If we have no recorded URL (simulator without a camera), skip the
-        // upload and just advance.
-        guard let recorded = model.recordedURL,
-              FileManager.default.fileExists(atPath: recorded.path) else {
-            goDone(model.recordedURL)
-            return
+        // No await, no spinner, no blocked button. We hand the raw
+        // recording to OfflineReelQueue (a fast file-move into App
+        // Support) and immediately navigate to Profile. Compression
+        // and upload happen entirely in the background; ProfileView
+        // surfaces progress via the OfflineReelQueue banner.
+        if let recorded = model.recordedURL,
+           FileManager.default.fileExists(atPath: recorded.path) {
+            OfflineReelQueue.shared.enqueueRawRecording(
+                fileURL: recorded,
+                transcript: model.transcript,
+            )
         }
-        uploading = true
-        uploadError = nil
-        Task { @MainActor in
-            defer { uploading = false }
-            // 1. Compress the raw capture to HEVC at a network-appropriate
-            //    resolution. Drops a 30s reel from ~150 MB to ~3-6 MB so
-            //    the rest of this flow stays fast on Tier-3 networks.
-            // 2. Upload via S3 multipart with per-chunk retry — a single
-            //    flaky TCP connection no longer restarts the whole upload.
-            // 3. The backend kicks off transcoding (HLS ladder) + the
-            //    Gemini reel agent in parallel BackgroundTasks.
-            do {
-                let compressed = try await ReelCompressor.shared.compress(source: recorded)
-                _ = try await ReelUploader.shared.upload(
-                    fileURL: compressed.url,
-                    contentType: "video/mp4",
-                    transcript: model.transcript
-                )
-                // Clean up the compressed temp file — the raw capture is
-                // cleaned up by RecordReelViewModel on exit.
-                try? FileManager.default.removeItem(at: compressed.url)
-                goDone(recorded)
-            } catch {
-                uploadError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-            }
-        }
+        goDone(model.recordedURL)
     }
 
     private func fmt(_ seconds: Int) -> String {
