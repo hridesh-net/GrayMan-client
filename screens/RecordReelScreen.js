@@ -16,6 +16,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 
 import { useTheme } from '../src/AppTheme';
 import PressScale from '../src/components/PressScale';
+import { uploadReel } from '../src/services/reelUploader';
 import { Colors, Spacing, Radius, Shadow } from '../src/theme';
 
 const MAX_DURATION = 30;
@@ -37,6 +38,8 @@ export default function RecordReelScreen({ goBack, goDone }) {
   const [phase, setPhase] = useState('idle'); // 'idle' | 'recording' | 'done'
   const [elapsed, setElapsed] = useState(0);
   const [recordingUri, setRecordingUri] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadPct, setUploadPct] = useState(0);
 
   const recordingRef = useRef(null);
   const timerRef = useRef(null);
@@ -129,6 +132,21 @@ export default function RecordReelScreen({ goBack, goDone }) {
     setRecordingUri(null);
     setElapsed(0);
     setPhase('idle');
+    setUploadPct(0);
+  };
+
+  const handleSubmit = async () => {
+    if (!recordingUri || uploading) return;
+    setUploading(true);
+    try {
+      await uploadReel(recordingUri, null, setUploadPct);
+      goDone();
+    } catch (err) {
+      console.warn('Reel upload failed', err);
+      alert(err.message || 'Upload failed');
+    } finally {
+      setUploading(false);
+    }
   };
 
   const remaining = MAX_DURATION - elapsed;
@@ -262,10 +280,17 @@ export default function RecordReelScreen({ goBack, goDone }) {
               </Text>
             </PressScale>
             <PressScale
-              onPress={goDone}
-              style={[styles.submitBtn, { backgroundColor: accent, shadowColor: accent }]}
+              onPress={handleSubmit}
+              disabled={uploading}
+              style={[styles.submitBtn, { backgroundColor: accent, shadowColor: accent }, uploading && { opacity: 0.6 }]}
             >
-              <Text style={styles.submitBtnText}>{t('Submit Reel', 'रील सबमिट करें')}</Text>
+              {uploading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.submitBtnText}>
+                  {uploadPct > 0 ? `${uploadPct}%` : t('Submit Reel', 'रील सबमिट करें')}
+                </Text>
+              )}
             </PressScale>
           </View>
         )}

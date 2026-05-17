@@ -13,6 +13,8 @@ struct RecordReelView: View {
     let goDone: (URL?) -> Void
 
     @State private var model: RecordReelViewModel
+    @State private var uploading: Bool = false
+    @State private var uploadError: String? = nil
 
     private var tips: [String] {
         [
@@ -42,6 +44,14 @@ struct RecordReelView: View {
         }
         .task { await model.onAppear() }
         .onDisappear { Task { await model.onDisappear() } }
+        .voiceGuide(
+            en: "Now we need a thirty second video. Tell us your trade, how many years " +
+                "of experience you have, and show your best work. Speak clearly. " +
+                "When you are ready, tap the red record button. Tap Submit when done.",
+            hi: "अब आपको तीस सेकंड का एक वीडियो बनाना है। बताइए आप क्या काम करते हैं, " +
+                "कितने साल का अनुभव है, और अपना सबसे अच्छा काम दिखाइए। साफ़ बोलिए। " +
+                "तैयार हों तो लाल बटन दबाइए। काम पूरा हो जाए तो सबमिट पर टैप कीजिए।"
+        )
     }
 
     // MARK: - Top viewfinder
@@ -285,7 +295,7 @@ struct RecordReelView: View {
         switch model.phase {
         case .idle, .failed:
             Button {
-                Task { await model.startRecording() }
+                Task { await model.startRecording(lang: theme.language) }
             } label: {
                 HStack(spacing: 10) {
                     Image(systemName: "circle.fill").font(.system(size: 14))
@@ -347,21 +357,27 @@ struct RecordReelView: View {
                 .accessibilityLabel(theme.t("Re-record reel", "रील फिर से रिकॉर्ड करें"))
 
                 Button {
-                    goDone(model.recordedURL)
+                    submitReel()
                 } label: {
-                    Text(theme.t("Submit Reel", "रील सबमिट करें"))
-                        .scaledFont(size: 15, weight: .bold, relativeTo: .body)
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
-                        .background(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .fill(theme.accent)
-                        )
-                        .shadow(color: theme.accent.opacity(0.34),
-                                radius: 10, x: 0, y: 5)
+                    HStack(spacing: 8) {
+                        if uploading { ProgressView().controlSize(.small).tint(.white) }
+                        Text(uploading
+                             ? theme.t("Uploading…", "अपलोड हो रहा है…")
+                             : theme.t("Submit Reel", "रील सबमिट करें"))
+                            .scaledFont(size: 15, weight: .bold, relativeTo: .body)
+                    }
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(theme.accent)
+                    )
+                    .shadow(color: theme.accent.opacity(0.34),
+                            radius: 10, x: 0, y: 5)
                 }
                 .buttonStyle(PressScaleStyle(scale: 0.97))
+                .disabled(uploading)
                 .accessibilityLabel(theme.t("Submit reel", "रील सबमिट करें"))
             }
         }
@@ -379,8 +395,45 @@ struct RecordReelView: View {
     }
 
     private var errorMessage: String? {
+        if let uploadError { return uploadError }
         if case .failed(let msg) = model.phase { return msg }
         return nil
+    }
+
+    private func submitReel() {
+        // If we have no recorded URL (simulator without a camera), skip the
+        // upload and just advance.
+        guard let recorded = model.recordedURL,
+              FileManager.default.fileExists(atPath: recorded.path) else {
+            goDone(model.recordedURL)
+            return
+        }
+        uploading = true
+        uploadError = nil
+        Task { @MainActor in
+            defer { uploading = false }
+            // 1. Compress the raw capture to HEVC at a network-appropriate
+            //    resolution. Drops a 30s reel from ~150 MB to ~3-6 MB so
+            //    the rest of this flow stays fast on Tier-3 networks.
+            // 2. Upload via S3 multipart with per-chunk retry — a single
+            //    flaky TCP connection no longer restarts the whole upload.
+            // 3. The backend kicks off transcoding (HLS ladder) + the
+            //    Gemini reel agent in parallel BackgroundTasks.
+            do {
+                let compressed = try await ReelCompressor.shared.compress(source: recorded)
+                _ = try await ReelUploader.shared.upload(
+                    fileURL: compressed.url,
+                    contentType: "video/mp4",
+                    transcript: model.transcript
+                )
+                // Clean up the compressed temp file — the raw capture is
+                // cleaned up by RecordReelViewModel on exit.
+                try? FileManager.default.removeItem(at: compressed.url)
+                goDone(recorded)
+            } catch {
+                uploadError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            }
+        }
     }
 
     private func fmt(_ seconds: Int) -> String {

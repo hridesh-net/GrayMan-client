@@ -7,6 +7,17 @@ struct SettingsView: View {
     @Environment(AppTheme.self) private var theme
     @Environment(\.dismiss) private var dismiss
 
+    /// Called after the user confirms sign-out, AFTER the local token has
+    /// been cleared. The host (GrayManApp via ProfileView) routes the user
+    /// back to the onboarding screen.
+    let onSignOut: () -> Void
+
+    @State private var showSignOutConfirm: Bool = false
+
+    init(onSignOut: @escaping () -> Void = {}) {
+        self.onSignOut = onSignOut
+    }
+
     var body: some View {
         ZStack {
             Color.canvas.ignoresSafeArea()
@@ -18,14 +29,69 @@ struct SettingsView: View {
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 28) {
                         languageSection
+                        voiceGuidanceSection
                         appearanceSection
                         aboutSection
+                        accountSection
                     }
                     .padding(.horizontal, 20)
                     .padding(.top, 16)
                     .padding(.bottom, 40)
                 }
             }
+        }
+        .alert(theme.t("Sign out?", "साइन आउट करें?"), isPresented: $showSignOutConfirm) {
+            Button(theme.t("Cancel", "रद्द करें"), role: .cancel) { }
+            Button(theme.t("Sign out", "साइन आउट"), role: .destructive) {
+                TokenStore.shared.clear()
+                dismiss()
+                // Run the routing reset on the next loop tick so the
+                // fullScreenCover finishes dismissing before the host
+                // swaps the underlying screen out from under us.
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(80))
+                    onSignOut()
+                }
+            }
+        } message: {
+            Text(theme.t(
+                "This will clear your local session and return you to the login screen.",
+                "इससे आपका सत्र साफ़ हो जाएगा और आप लॉगिन स्क्रीन पर लौटेंगे।"
+            ))
+        }
+    }
+
+    // MARK: - Account section (sign out)
+
+    private var accountSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            sectionLabel(theme.t("Account", "अकाउंट"))
+
+            Button { showSignOutConfirm = true } label: {
+                HStack(spacing: 14) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(Color(hex: "#E63946").opacity(0.12))
+                            .frame(width: 40, height: 40)
+                        Image(systemName: "rectangle.portrait.and.arrow.right")
+                            .foregroundStyle(Color(hex: "#E63946"))
+                            .font(.system(size: 17, weight: .semibold))
+                    }
+                    Text(theme.t("Sign out", "साइन आउट"))
+                        .scaledFont(size: 16, weight: .semibold, relativeTo: .body)
+                        .foregroundStyle(Color(hex: "#E63946"))
+                    Spacer()
+                }
+                .padding(.horizontal, 16).padding(.vertical, 14)
+                .background(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(.white)
+                        .shadow(color: .black.opacity(0.05), radius: 10, x: 0, y: 4)
+                )
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(theme.t("Sign out", "साइन आउट"))
         }
     }
 
@@ -127,6 +193,65 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - Voice guidance (TTS)
+
+    @State private var voiceGuideOn: Bool = VoiceGuide.shared.enabled
+
+    private var voiceGuidanceSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            sectionLabel(theme.t("Voice guidance", "आवाज़ मार्गदर्शन"))
+            VStack(spacing: 0) {
+                HStack(spacing: 14) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(theme.accent.opacity(0.12))
+                            .frame(width: 40, height: 40)
+                        Image(systemName: "speaker.wave.2.fill")
+                            .foregroundStyle(theme.accent)
+                            .font(.system(size: 17, weight: .semibold))
+                    }
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(theme.t("Read instructions aloud",
+                                     "निर्देश पढ़कर सुनाएँ"))
+                            .scaledFont(size: 16, weight: .semibold, relativeTo: .body)
+                            .foregroundStyle(Color.shadowGrey)
+                        Text(theme.t(
+                            "Each screen will read its instructions in your selected language.",
+                            "हर स्क्रीन अपनी भाषा में निर्देश सुनाएगी।"
+                        ))
+                        .scaledFont(size: 12, relativeTo: .caption)
+                        .foregroundStyle(Color.dimText)
+                        .lineLimit(2)
+                    }
+                    Spacer()
+                    Toggle("", isOn: $voiceGuideOn)
+                        .labelsHidden()
+                        .tint(theme.accent)
+                        .onChange(of: voiceGuideOn) { _, on in
+                            VoiceGuide.shared.enabled = on
+                            if on {
+                                // Immediate confirmation — gives the user
+                                // audio proof that it works.
+                                VoiceGuide.shared.speak(
+                                    theme.t(
+                                        "Voice guidance is now on.",
+                                        "आवाज़ मार्गदर्शन अब चालू है।"
+                                    ),
+                                    lang: theme.language
+                                )
+                            }
+                        }
+                }
+                .padding(.horizontal, 16).padding(.vertical, 14)
+            }
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(.white)
+                    .shadow(color: .black.opacity(0.05), radius: 10, x: 0, y: 4)
+            )
+        }
+    }
+
     // MARK: - Appearance section (accent colour redirect)
 
     private var appearanceSection: some View {
@@ -173,7 +298,7 @@ struct SettingsView: View {
 
             VStack(spacing: 0) {
                 aboutRow(icon: "bolt.fill",
-                         label: theme.t("GrayMan", "GrayMan"),
+                         label: theme.t("sthapna.ai", "sthapna.ai"),
                          detail: theme.t("Version 1.0", "संस्करण 1.0"))
                 Divider().padding(.leading, 56)
                 aboutRow(icon: "doc.text.fill",

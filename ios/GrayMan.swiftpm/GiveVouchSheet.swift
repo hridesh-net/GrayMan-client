@@ -8,6 +8,7 @@ struct GiveVouchSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     let worker: Worker
+    var workerService: WorkerService = .shared
 
     @State private var relationship: Int = 0
     @State private var rating: Int = 0
@@ -16,6 +17,8 @@ struct GiveVouchSheet: View {
     @State private var hasRecording = false
     @State private var note = ""
     @State private var submitted = false
+    @State private var submitting = false
+    @State private var submitError: String? = nil
 
     private var relationships: [String] {
         [
@@ -223,32 +226,75 @@ struct GiveVouchSheet: View {
     // MARK: - Submit
 
     private var submitButton: some View {
-        Button {
-            guard rating > 0 else { return }
-            submitted = true
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "checkmark.seal.fill")
-                    .symbolRenderingMode(.palette)
-                    .foregroundStyle(.white, .white.opacity(0.55))
-                    .accessibilityHidden(true)
-                Text(theme.t("Submit Vouch", "Vouch सबमिट करें"))
-                    .scaledFont(size: 16, weight: .bold, relativeTo: .headline)
+        VStack(spacing: 10) {
+            if let submitError {
+                Text(submitError)
+                    .scaledFont(size: 12, weight: .semibold, relativeTo: .caption)
+                    .foregroundStyle(Color(hex: "#E63946"))
+                    .multilineTextAlignment(.center)
             }
-            .foregroundStyle(.white)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 17)
-            .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(rating > 0 ? theme.accent : Color.dimText.opacity(0.40))
-            )
-            .shadow(color: rating > 0 ? theme.accent.opacity(0.36) : .clear,
-                    radius: 12, x: 0, y: 6)
+            Button {
+                guard rating > 0, !submitting else { return }
+                submit()
+            } label: {
+                HStack(spacing: 8) {
+                    if submitting {
+                        ProgressView().controlSize(.small).tint(.white)
+                    } else {
+                        Image(systemName: "checkmark.seal.fill")
+                            .symbolRenderingMode(.palette)
+                            .foregroundStyle(.white, .white.opacity(0.55))
+                            .accessibilityHidden(true)
+                    }
+                    Text(submitting
+                         ? theme.t("Submitting…", "भेज रहे हैं…")
+                         : theme.t("Submit Vouch", "Vouch सबमिट करें"))
+                        .scaledFont(size: 16, weight: .bold, relativeTo: .headline)
+                }
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 17)
+                .background(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(rating > 0 ? theme.accent : Color.dimText.opacity(0.40))
+                )
+                .shadow(color: rating > 0 ? theme.accent.opacity(0.36) : .clear,
+                        radius: 12, x: 0, y: 6)
+            }
+            .buttonStyle(PressScaleStyle())
+            .disabled(rating == 0 || submitting)
+            .accessibilityLabel(theme.t("Submit vouch", "Vouch सबमिट करें"))
+            .accessibilityHint(rating == 0 ? theme.t("Give a star rating first", "पहले स्टार रेटिंग दें") : "")
         }
-        .buttonStyle(PressScaleStyle())
-        .disabled(rating == 0)
-        .accessibilityLabel(theme.t("Submit vouch", "Vouch सबमिट करें"))
-        .accessibilityHint(rating == 0 ? theme.t("Give a star rating first", "पहले स्टार रेटिंग दें") : "")
+    }
+
+    private func submit() {
+        submitError = nil
+        submitting = true
+        // Backend requires at least one skill index — use verified skill
+        // indices if the worker has any, otherwise fall back to "all skills".
+        let skillIndices: [Int] = {
+            if !worker.verifiedTagIndices.isEmpty {
+                return Array(worker.verifiedTagIndices).sorted()
+            }
+            return Array(0..<max(1, worker.tags.count))
+        }()
+        Task {
+            defer { submitting = false }
+            do {
+                try await workerService.giveVouch(
+                    toWorkerID: worker.id,
+                    skillIndices: skillIndices
+                )
+                submitted = true
+            } catch APIError.server(409, _) {
+                // Already vouched — treat as success so the UX still feels
+                // celebratory; the receiver score stays the same.
+                submitted = true
+            } catch {
+                submitError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            }
+        }
     }
 
     // MARK: - Success

@@ -56,6 +56,18 @@ struct PhoneAuthView: View {
             }
         }
         .onAppear { phoneFocused = true }
+        .voiceGuide(
+            en: model.stage == .otp
+              ? "Please enter the six digit OTP you received on WhatsApp or SMS. " +
+                "We send it to your phone — don't share it with anyone."
+              : "Please enter your ten digit Indian phone number. " +
+                "We will send a six digit code on WhatsApp or SMS to confirm it is yours.",
+            hi: model.stage == .otp
+              ? "कृपया वो छह अंकों का ओ-टी-पी डालिए जो आपको व्हाट्सऐप या एस-एम-एस पर मिला है। " +
+                "किसी को मत बताइए।"
+              : "कृपया अपना दस अंकों का फ़ोन नंबर डालिए। " +
+                "हम व्हाट्सऐप या एस-एम-एस पर छह अंकों का कोड भेजेंगे।"
+        )
     }
 
     private var backButton: some View {
@@ -207,8 +219,8 @@ struct PhoneAuthView: View {
 
     private var otpBoxes: some View {
         ZStack {
-            HStack(spacing: 12) {
-                ForEach(0..<4, id: \.self) { i in
+            HStack(spacing: 8) {
+                ForEach(0..<6, id: \.self) { i in
                     let char = i < model.code.count
                         ? String(model.code[model.code.index(model.code.startIndex, offsetBy: i)])
                         : ""
@@ -216,17 +228,17 @@ struct PhoneAuthView: View {
                     let isFilled = !char.isEmpty
 
                     ZStack {
-                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
                             .fill(isActive ? theme.accent.opacity(0.08) : Color.soft)
                         if isActive {
-                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
                                 .stroke(theme.accent, lineWidth: 2)
                         }
                         Text(char)
-                            .scaledFont(size: 32, weight: .heavy, relativeTo: .largeTitle)
+                            .scaledFont(size: 26, weight: .heavy, relativeTo: .title)
                             .foregroundStyle(isFilled ? Color.shadowGrey : Color.shadowGrey.opacity(0.3))
                     }
-                    .frame(width: 70, height: 78)
+                    .frame(width: 48, height: 64)
                 }
             }
             .accessibilityHidden(true)
@@ -239,15 +251,15 @@ struct PhoneAuthView: View {
                 .focused($otpFocused)
                 .opacity(0.001)
                 .frame(maxWidth: .infinity)
-                .frame(height: 78)
+                .frame(height: 64)
                 .onChange(of: model.code) { _, new in
                     let digits = new.filter(\.isNumber)
-                    let trimmed = String(digits.prefix(4))
+                    let trimmed = String(digits.prefix(6))
                     if trimmed != model.code { model.code = trimmed }
                 }
-                .accessibilityLabel("One-time passcode, 4 digits")
+                .accessibilityLabel("One-time passcode, 6 digits")
                 .accessibilityValue(model.code.isEmpty ? "empty" : model.code)
-                .accessibilityHint("Enter the 4-digit code we sent you")
+                .accessibilityHint("Enter the 6-digit code we sent you")
         }
         .contentShape(Rectangle())
         .onTapGesture { otpFocused = true }

@@ -77,6 +77,8 @@ export const WorkerSamples = [
 ];
 
 export const AllCategories = [
-  'All', 'Electrician', 'Plumber', 'Nurse', 'Carpenter',
-  'Painter', 'Mechanic', 'Welder', 'Mason', 'AC Repair',
+  'All', 'Electrician', 'Plumber', 'Nurse', 'Carpenter', 'Painter',
+  'Mechanic', 'Welder', 'Mason', 'AC Repair', 'Driver', 'Cook',
+  'Security Guard', 'Sales Executive', 'Receptionist', 'Data Entry',
+  'JCB Operator', 'Housekeeping',
 ];

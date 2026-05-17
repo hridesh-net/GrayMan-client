@@ -8,14 +8,17 @@ import PackageDescription
 import AppleProductTypes
 
 let package = Package(
-    name: "GrayMan",
+    name: "Sthapna",
     platforms: [
         .iOS("26.0")
     ],
     products: [
         .iOSApplication(
-            name: "GrayMan",
+            name: "sthapna.ai",
             targets: ["AppModule"],
+            // Bundle identifier is intentionally kept on the legacy value so
+            // existing installs keep their Keychain JWT + UserDefaults state.
+            // Renaming it would log every existing user out on next deploy.
             bundleIdentifier: "com.grayman.app",
             teamIdentifier: "HHZ5J8ZBRX",
             displayVersion: "1.0",
@@ -29,9 +32,10 @@ let package = Package(
                 .portrait
             ],
             capabilities: [
-                .camera(purposeString: "GrayMan needs the camera to record your work intro reel."),
-                .microphone(purposeString: "GrayMan needs the microphone to capture audio for your reel."),
-                .speechRecognition(purposeString: "GrayMan uses speech recognition to transcribe your interview answers.")
+                .camera(purposeString: "sthapna.ai needs the camera to record your work intro reel."),
+                .microphone(purposeString: "sthapna.ai needs the microphone to capture audio for your reel."),
+                .speechRecognition(purposeString: "sthapna.ai uses speech recognition to transcribe your interview answers."),
+                .locationWhenInUse(purposeString: "sthapna.ai uses your approximate location to show nearby workers and your neighbourhood on the profile.")
             ]
         )
     ],

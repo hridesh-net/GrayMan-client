@@ -32,10 +32,22 @@ struct OnboardingView: View {
                 .padding(.bottom, 28)
                 .accessibilityHidden(true)
 
-                Text("GrayMan")
-                    .scaledFont(size: 44, weight: .heavy, relativeTo: .largeTitle)
-                    .foregroundStyle(Color.shadowGrey)
-                    .tracking(-1.5)
+                HStack(spacing: 10) {
+                    Text("sthapna.ai")
+                        .scaledFont(size: 44, weight: .heavy, relativeTo: .largeTitle)
+                        .foregroundStyle(Color.shadowGrey)
+                        .tracking(-1.5)
+                    VoiceGuideButton(
+                        englishScript:
+                          "Welcome to sthapna dot AI. We help skilled workers get hired. " +
+                          "Tap Get Started to create your profile in three steps — " +
+                          "phone number, name, and a thirty second video showing your work.",
+                        hindiScript:
+                          "स्थापना डॉट ए-आई में आपका स्वागत है। हम कुशल कारीगरों को काम दिलाते हैं। " +
+                          "अपनी प्रोफ़ाइल बनाने के लिए शुरू करें पर टैप करें। तीन कदम — " +
+                          "फ़ोन नंबर, नाम, और तीस सेकंड का अपने काम का वीडियो।"
+                    )
+                }
 
                 Text(theme.t("Digital identity for skilled workers", "कुशल कामगारों की डिजिटल पहचान",
                              mr: "कुशल कामगारांची डिजिटल ओळख",
@@ -95,8 +107,8 @@ struct OnboardingView: View {
                     .accessibilityLabel(theme.t("Sign in", "साइन इन",
                                                 mr: "साइन इन करा", te: "సైన్ ఇన్",
                                                 ta: "உள்நுழைய", kn: "ಸೈನ್ ಇನ್"))
-                    .accessibilityHint(theme.t("Sign in to an existing GrayMan account",
-                                               "मौजूदा GrayMan अकाउंट में साइन इन करें"))
+                    .accessibilityHint(theme.t("Sign in to an existing sthapna.ai account",
+                                               "मौजूदा sthapna.ai अकाउंट में साइन इन करें"))
 
                     Text(theme.t("By continuing you agree to our Terms & Privacy",
                                  "जारी रखकर आप हमारी शर्तों और गोपनीयता से सहमत हैं"))
@@ -108,6 +120,14 @@ struct OnboardingView: View {
                 .padding(.bottom, 100)
             }
         }
+        .voiceGuide(
+            en: "Welcome to sthapna dot AI. We help skilled workers get hired. " +
+                "Tap Get Started to create your profile in three steps — " +
+                "phone number, name, and a thirty second video showing your work.",
+            hi: "स्थापना डॉट ए-आई में आपका स्वागत है। हम कुशल कारीगरों को काम दिलाते हैं। " +
+                "शुरू करें पर टैप कीजिए। तीन आसान कदम — " +
+                "फ़ोन नंबर, नाम, और अपने काम का तीस सेकंड का वीडियो।"
+        )
         .overlay(alignment: .bottom) {
             VStack(spacing: 6) {
                 HStack(spacing: 8) {

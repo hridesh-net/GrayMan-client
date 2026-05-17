@@ -19,19 +19,23 @@ enum Screen: Equatable {
 @main
 struct GrayManApp: App {
     @State private var theme = AppTheme()
-    @State private var screen: Screen = .onboarding
+    @State private var screen: Screen
     @State private var userName: String = ""
     @State private var selectedWorker: Worker? = nil
     @State private var previousScreen: Screen = .chooseRole   // for Explore back-nav
+    @State private var reelOrigin: Screen = .chooseRole       // for RecordReel back-nav (chooseRole vs profile re-shoot)
 
     // Composition root: swap these for real implementations as the backend lands.
-    private let phoneAuthRepository: PhoneAuthRepository = MockPhoneAuthRepository()
+    private let phoneAuthRepository: PhoneAuthRepository = APIPhoneAuthRepository()
     private let recordingService: RecordingService = AVRecordingService()
-    #if targetEnvironment(simulator)
-    private let voiceInterviewService: VoiceInterviewService = MockVoiceInterviewService()
-    #else
-    private let voiceInterviewService: VoiceInterviewService = SFVoiceInterviewService()
-    #endif
+
+    init() {
+        // If we already have a JWT in the Keychain, skip the auth flow and
+        // drop the user straight into their profile. Otherwise start at the
+        // splash screen.
+        let hasToken = TokenStore.shared.token != nil
+        _screen = State(initialValue: hasToken ? .profile : .onboarding)
+    }
 
     var body: some Scene {
         WindowGroup {
@@ -59,8 +63,7 @@ struct GrayManApp: App {
         switch screen {
         case .onboarding:
             OnboardingView(
-                // Auth bypassed for now; jump straight to the name capture.
-                goNext: { screen = .nameEntry }
+                goNext: { screen = .phoneAuth }
             )
 
         case .phoneAuth:
@@ -72,10 +75,11 @@ struct GrayManApp: App {
 
         case .nameEntry:
             NameEntryView(
-                goBack: { screen = .onboarding },
+                goBack: { screen = .phoneAuth },
                 goNext: { name in
                     userName = name
                     screen = .chooseRole
+                    Task { try? await WorkerService.shared.updateSelf(WorkerUpdateRequest(name: name)) }
                 }
             )
 
@@ -83,14 +87,17 @@ struct GrayManApp: App {
             ChooseRoleView(
                 name: userName.split(separator: " ").first.map(String.init) ?? userName,
                 goBack: { screen = .nameEntry },
-                goProfessional: { screen = .recordReel },
+                goProfessional: {
+                    reelOrigin = .chooseRole
+                    screen = .recordReel
+                },
                 goExplore: { goExplore(from: .chooseRole) }
             )
 
         case .recordReel:
             RecordReelView(
                 model: RecordReelViewModel(service: recordingService),
-                goBack: { screen = .chooseRole },
+                goBack: { screen = reelOrigin },
                 goDone: { _ in screen = .profile }
             )
 
@@ -107,15 +114,23 @@ struct GrayManApp: App {
         case .workerProfile:
             ProfileView(
                 worker: selectedWorker,
-                voiceInterviewService: voiceInterviewService,
                 onBack: { screen = .explore }
             )
 
         case .profile:
             ProfileView(
                 userName: userName.isEmpty ? "Ramesh Kumar" : userName,
-                voiceInterviewService: voiceInterviewService,
-                onExplore: { goExplore(from: .profile) }
+                onExplore: { goExplore(from: .profile) },
+                onSignOut: {
+                    userName = ""
+                    selectedWorker = nil
+                    previousScreen = .chooseRole
+                    screen = .onboarding
+                },
+                onRecordReel: {
+                    reelOrigin = .profile
+                    screen = .recordReel
+                }
             )
         }
     }

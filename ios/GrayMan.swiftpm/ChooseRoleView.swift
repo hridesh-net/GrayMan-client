@@ -44,6 +44,14 @@ struct ChooseRoleView: View {
                 Spacer()
             }
         }
+        .voiceGuide(
+            en: "Welcome \(name)! Now tell us why you are here. " +
+                "If you are a worker who wants to get hired, choose Professional. " +
+                "If you want to find skilled workers near you, choose Explore Workers.",
+            hi: "स्वागत है \(name)! अब बताइए आप यहाँ किसलिए आए हैं। " +
+                "अगर आप काम करने वाले हैं और काम पाना चाहते हैं, तो Professional चुनिए। " +
+                "अगर आप पास के कुशल कामगार ढूंढना चाहते हैं, तो Explore Workers चुनिए।"
+        )
     }
 
     private var greeting: some View {
@@ -57,7 +65,7 @@ struct ChooseRoleView: View {
                 .foregroundStyle(Color.shadowGrey)
                 .tracking(-1.4)
                 .lineSpacing(2)
-            Text(theme.t("Choose how you'd like to use GrayMan", "GrayMan का उपयोग कैसे करना चाहते हैं?"))
+            Text(theme.t("Choose how you'd like to use sthapna.ai", "sthapna.ai का उपयोग कैसे करना चाहते हैं?"))
                 .scaledFont(size: 15, relativeTo: .subheadline)
                 .foregroundStyle(Color.mutedText)
         }

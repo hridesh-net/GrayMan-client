@@ -1,436 +1,323 @@
 import SwiftUI
 
+// AI Voice Interview — backend-mediated Gemini Live + RAG.
+//
+// Flow:
+//   1. Worker picks language (English / Hindi / Hinglish).
+//   2. iOS opens a WebSocket to /api/v1/interview/ws on our backend.
+//      The backend authenticates the JWT, builds the system prompt
+//      (with RAG context for the worker's trade), opens a server-side
+//      Gemini Live session, and proxies audio in both directions.
+//   3. iOS streams 16kHz PCM mic audio up + plays 24kHz PCM audio back.
+//      Tool calls (submit_interview_score, lookup_trade_knowledge) are
+//      intercepted on the backend — the client never sees them directly.
+//   4. When scoring fires, the backend persists + sends a {"type":"scores"}
+//      frame followed by {"type":"done"}.
+
 struct VoiceInterviewView: View {
     @Environment(AppTheme.self) private var theme
     @Environment(\.dismiss) private var dismiss
 
-    @State private var model: VoiceInterviewViewModel
+    let trade: String
 
-    init(trade: String, service: VoiceInterviewService) {
-        _model = State(wrappedValue: VoiceInterviewViewModel(trade: trade, service: service))
+    @State private var model: InterviewSessionModel
+
+    init(trade: String) {
+        self.trade = trade
+        _model = State(wrappedValue: InterviewSessionModel(trade: trade))
     }
 
     var body: some View {
         ZStack {
             Color.canvas.ignoresSafeArea()
-            Blobs(accent: theme.accent, opacity: 0.5)
+            Blobs(accent: theme.accent, opacity: 0.45)
 
             VStack(spacing: 0) {
                 navBar
                 Group {
                     switch model.phase {
-                    case .language:    languageScreen
-                    case .intro:       introScreen
-                    case .questioning: questionScreen
-                    case .result:      resultScreen
+                    case .language: languageScreen
+                    case .connecting: connectingScreen
+                    case .live: liveScreen
+                    case .result: resultScreen
+                    case .failed: failedScreen
                     }
                 }
                 .transition(.opacity)
-                .animation(.easeInOut(duration: 0.3), value: model.phase)
+                .animation(.easeInOut(duration: 0.25), value: model.phase)
             }
         }
-        .onDisappear { model.onDisappear() }
+        .onDisappear { Task { await model.stop() } }
     }
 
-    // MARK: - Nav bar
+    // MARK: - Nav
 
     private var navBar: some View {
         HStack {
-            Button { dismiss() } label: {
+            Button {
+                Task { await model.stop() }
+                dismiss()
+            } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(Color.shadowGrey)
                     .frame(width: 36, height: 36)
                     .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.soft))
-                    .accessibilityHidden(true)
             }
             .accessibilityLabel("Close interview")
-
             Spacer()
-            Text("AI Interview")
+            Text(theme.t("AI Interview", "AI इंटरव्यू"))
                 .scaledFont(size: 16, weight: .heavy, relativeTo: .headline)
                 .foregroundStyle(Color.shadowGrey)
             Spacer()
-
-            if model.phase == .questioning {
-                Text("\(model.questionIndex + 1)/\(model.questions.count)")
-                    .scaledFont(size: 13, weight: .semibold, relativeTo: .footnote)
-                    .foregroundStyle(Color.mutedText)
-                    .frame(width: 40, alignment: .trailing)
-            } else {
-                Color.clear.frame(width: 36)
-            }
+            Color.clear.frame(width: 36, height: 36)
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 8)
-        .padding(.bottom, 12)
+        .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 12)
     }
 
-    // MARK: - Language selection
+    // MARK: - Phases
 
     private var languageScreen: some View {
-        VStack(spacing: 0) {
+        VStack(spacing: 18) {
             Spacer()
+            Image(systemName: "waveform.and.mic")
+                .font(.system(size: 56))
+                .foregroundStyle(theme.accent)
+            Text(theme.t("Pick a language", "भाषा चुनें"))
+                .scaledFont(size: 24, weight: .heavy, relativeTo: .title)
+                .foregroundStyle(Color.shadowGrey)
+            Text(theme.t("The interviewer will speak in this language. You can mix English freely.",
+                         "इंटरव्यूअर इसी भाषा में बात करेगा। आप अंग्रेज़ी मिला सकते हैं।"))
+                .scaledFont(size: 13, relativeTo: .footnote)
+                .foregroundStyle(Color.mutedText)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
+            VStack(spacing: 10) {
+                languageButton("English", code: "en")
+                languageButton("हिंदी (Hindi)", code: "hi")
+                languageButton("Hinglish (mix)", code: "hi-en")
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 12)
+            Spacer()
+            Text(theme.t("Interview takes ~4 minutes. Find a quiet spot.",
+                         "इंटरव्यू ~4 मिनट का है। शांत जगह चुनें।"))
+                .scaledFont(size: 12, relativeTo: .caption)
+                .foregroundStyle(Color.dimText)
+                .padding(.bottom, 32)
+        }
+    }
 
-            VStack(spacing: 14) {
-                ZStack {
-                    Circle()
-                        .fill(theme.accent.opacity(0.12))
-                        .frame(width: 96, height: 96)
-                    Image(systemName: "waveform.and.mic")
-                        .font(.system(size: 40))
-                        .foregroundStyle(theme.accent)
-                }
-                Text("AI Voice Practice")
-                    .scaledFont(size: 28, weight: .heavy, relativeTo: .largeTitle)
+    private func languageButton(_ label: String, code: String) -> some View {
+        Button {
+            Task { await model.start(lang: code) }
+        } label: {
+            HStack {
+                Text(label)
+                    .scaledFont(size: 16, weight: .semibold, relativeTo: .body)
                     .foregroundStyle(Color.shadowGrey)
-                Text("2-minute mock interview for \(model.trade).\nPractice in your language.")
-                    .scaledFont(size: 15, relativeTo: .body)
+                Spacer()
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(theme.accent)
+            }
+            .padding(.horizontal, 18).padding(.vertical, 16)
+            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.soft))
+        }
+        .buttonStyle(PressScaleStyle(scale: 0.97))
+    }
+
+    private var connectingScreen: some View {
+        VStack(spacing: 18) {
+            Spacer()
+            ProgressView().controlSize(.large).tint(theme.accent)
+            Text(theme.t("Setting up your interviewer…", "इंटरव्यूअर तैयार हो रहा है…"))
+                .scaledFont(size: 16, weight: .semibold, relativeTo: .body)
+                .foregroundStyle(Color.shadowGrey)
+            Spacer()
+        }
+    }
+
+    private var liveScreen: some View {
+        VStack(spacing: 24) {
+            Spacer()
+            wavingOrb
+            Text(stateLabel)
+                .scaledFont(size: 18, weight: .heavy, relativeTo: .title2)
+                .foregroundStyle(Color.shadowGrey)
+            if !model.lastTextTurn.isEmpty {
+                Text(model.lastTextTurn)
+                    .scaledFont(size: 13, relativeTo: .footnote)
                     .foregroundStyle(Color.mutedText)
                     .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+                    .lineLimit(3)
+            }
+            Spacer()
+            Button {
+                Task { await model.stop(); dismiss() }
+            } label: {
+                Text(theme.t("End Interview", "इंटरव्यू समाप्त करें"))
+                    .scaledFont(size: 15, weight: .semibold, relativeTo: .body)
+                    .foregroundStyle(Color.mutedText)
+                    .padding(.horizontal, 22).padding(.vertical, 12)
+                    .overlay(
+                        Capsule().stroke(Color.dimText.opacity(0.3), lineWidth: 1.5)
+                    )
             }
             .padding(.bottom, 36)
+        }
+    }
 
-            VStack(spacing: 8) {
-                Text("CHOOSE LANGUAGE")
-                    .scaledFont(size: 11, weight: .heavy, relativeTo: .caption2)
-                    .foregroundStyle(Color.dimText)
-                    .tracking(1.0)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 24)
+    private var wavingOrb: some View {
+        let speaking = model.isSpeaking
+        return ZStack {
+            Circle()
+                .fill(speaking ? theme.accent.opacity(0.20) : theme.accent.opacity(0.08))
+                .frame(width: 200, height: 200)
+                .scaleEffect(speaking ? 1.05 : 1.0)
+                .animation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true), value: speaking)
+            Circle()
+                .fill(theme.accent.opacity(0.55))
+                .frame(width: 110, height: 110)
+            Image(systemName: speaking ? "waveform" : "mic.fill")
+                .font(.system(size: 38, weight: .bold))
+                .foregroundStyle(.white)
+        }
+    }
 
-                ForEach(model.languageNames.indices, id: \.self) { i in
-                    let on = model.selectedLangIndex == i
-                    Button { model.selectedLangIndex = i } label: {
-                        HStack {
-                            Text(model.languageNames[i])
-                                .scaledFont(size: 16, relativeTo: .body)
-                                .foregroundStyle(on ? .white : Color.shadowGrey)
-                            Spacer()
-                            if on {
-                                Image(systemName: "checkmark")
-                                    .font(.system(size: 13, weight: .bold))
-                                    .foregroundStyle(.white)
-                            }
-                        }
-                        .padding(.horizontal, 18)
-                        .padding(.vertical, 14)
-                        .background(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .fill(on ? theme.accent : Color.soft)
-                        )
-                    }
-                    .buttonStyle(PressScaleStyle(scale: 0.97))
-                    .padding(.horizontal, 24)
-                    .accessibilityLabel(model.languageNames[i])
-                    .accessibilityAddTraits(on ? [.isButton, .isSelected] : .isButton)
-                }
-            }
+    private var stateLabel: String {
+        if model.isSpeaking {
+            return theme.t("Interviewer is speaking…", "इंटरव्यूअर बोल रहे हैं…")
+        }
+        return theme.t("Your turn — speak naturally", "आपकी बारी — बोलिए")
+    }
 
+    private var resultScreen: some View {
+        VStack(spacing: 20) {
             Spacer()
-
-            Button { model.confirmLanguage() } label: {
-                Text("Continue")
+            Image(systemName: "checkmark.seal.fill")
+                .symbolRenderingMode(.palette)
+                .foregroundStyle(.white, theme.accent)
+                .font(.system(size: 60))
+            Text(theme.t("Interview complete!", "इंटरव्यू पूरा!"))
+                .scaledFont(size: 24, weight: .heavy, relativeTo: .title)
+                .foregroundStyle(Color.shadowGrey)
+            if let s = model.scores {
+                HStack(spacing: 14) {
+                    scoreRing(label: theme.t("Confidence", "आत्मविश्वास"), value: s.confidence)
+                    scoreRing(label: theme.t("Clarity", "स्पष्टता"), value: s.clarity)
+                    scoreRing(label: theme.t("Skill", "कौशल"), value: s.tradeCompetence)
+                }
+                .padding(.top, 4)
+                Text(s.summary)
+                    .scaledFont(size: 13, relativeTo: .footnote)
+                    .foregroundStyle(Color.mutedText)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 28).padding(.top, 8)
+            }
+            Spacer()
+            Button { dismiss() } label: {
+                Text(theme.t("Done", "हो गया"))
                     .scaledFont(size: 16, weight: .bold, relativeTo: .headline)
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 17)
                     .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(theme.accent))
-                    .shadow(color: theme.accent.opacity(0.36), radius: 12, x: 0, y: 6)
             }
-            .buttonStyle(PressScaleStyle())
             .padding(.horizontal, 24)
-            .padding(.bottom, 36)
+            .padding(.bottom, 32)
         }
     }
 
-    // MARK: - Intro
-
-    private var introScreen: some View {
-        VStack(spacing: 0) {
-            Spacer()
-
-            botAvatar(pulsing: false)
-                .padding(.bottom, 32)
-
-            Text("Ready when you are")
-                .scaledFont(size: 24, weight: .heavy, relativeTo: .title2)
-                .foregroundStyle(Color.shadowGrey)
-                .padding(.bottom, 8)
-
-            Text("I'll ask \(model.questions.count) questions about your work as a \(model.trade). The bot will read each question aloud — tap the mic when you're ready to answer.")
-                .scaledFont(size: 15, relativeTo: .body)
-                .foregroundStyle(Color.mutedText)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 36)
-
-            Spacer()
-
-            VStack(spacing: 10) {
-                infoRow(icon: "clock",         label: "About 2 minutes")
-                infoRow(icon: "mic.fill",      label: "Speak naturally — no scripts needed")
-                infoRow(icon: "chart.bar.fill", label: "Get Confidence + Clarity scores after")
-            }
-            .padding(.horizontal, 24)
-
-            Spacer()
-
-            Button { model.startInterview() } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "play.fill").accessibilityHidden(true)
-                    Text("Start Interview")
-                        .scaledFont(size: 16, weight: .bold, relativeTo: .headline)
-                }
-                .foregroundStyle(.white)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 17)
-                .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(theme.accent))
-                .shadow(color: theme.accent.opacity(0.36), radius: 12, x: 0, y: 6)
-            }
-            .buttonStyle(PressScaleStyle())
-            .padding(.horizontal, 24)
-            .padding(.bottom, 36)
-        }
-    }
-
-    // MARK: - Question screen
-
-    private var questionScreen: some View {
-        VStack(spacing: 0) {
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(Color.shadowGrey.opacity(0.10))
-                    Capsule()
-                        .fill(theme.accent)
-                        .frame(width: geo.size.width * CGFloat(model.answeredCount) / CGFloat(model.questions.count))
-                        .animation(.easeInOut(duration: 0.5), value: model.answeredCount)
-                }
-            }
-            .frame(height: 4)
-            .padding(.horizontal, 24)
-            .padding(.bottom, 28)
-            .accessibilityLabel("Progress: \(model.answeredCount) of \(model.questions.count) answered")
-
-            Spacer()
-
-            botAvatar(pulsing: model.questionState == .speaking)
-                .padding(.bottom, 28)
-
-            if model.questionState == .analysing {
-                HStack(spacing: 10) {
-                    ProgressView().tint(theme.accent)
-                    Text("Analysing your answer…")
-                        .scaledFont(size: 15, relativeTo: .body)
-                        .foregroundStyle(Color.mutedText)
-                }
-                .padding(16)
-                .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.soft))
-                .padding(.horizontal, 24)
-            } else {
-                Text(model.currentQuestion)
-                    .scaledFont(size: 16, relativeTo: .body)
-                    .foregroundStyle(Color.shadowGrey)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 18)
-                    .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(Color.soft))
-                    .padding(.horizontal, 24)
-            }
-
-            Spacer()
-
-            VStack(spacing: 10) {
-                let isRecording = model.questionState == .recording
-                let isBlocked   = model.questionState == .analysing || model.questionState == .speaking
-
-                Button { model.tapMic() } label: {
-                    ZStack {
-                        Circle()
-                            .fill(isRecording ? Color(hex: "#E63946") : theme.accent)
-                            .frame(width: 72, height: 72)
-                            .shadow(color: (isRecording ? Color(hex: "#E63946") : theme.accent).opacity(0.40),
-                                    radius: 12, x: 0, y: 6)
-                        Image(systemName: isRecording ? "stop.fill" : "mic.fill")
-                            .font(.system(size: 28))
-                            .foregroundStyle(.white)
-                    }
-                    .scaleEffect(isRecording ? 1.08 : 1.0)
-                    .animation(isRecording
-                        ? .easeInOut(duration: 0.7).repeatForever(autoreverses: true)
-                        : .default,
-                               value: isRecording)
-                    .opacity(isBlocked ? 0.45 : 1.0)
-                }
-                .buttonStyle(.plain)
-                .disabled(isBlocked)
-                .accessibilityLabel(isRecording ? "Stop recording answer" : "Record answer")
-
-                Group {
-                    switch model.questionState {
-                    case .speaking:      Text("Listening to question…")
-                    case .waitingForUser: Text("Tap to answer")
-                    case .recording:     Text("Tap to stop")
-                    case .analysing:     Text("Analysing…")
-                    }
-                }
-                .scaledFont(size: 13, relativeTo: .footnote)
-                .foregroundStyle(Color.mutedText)
-
-                if let err = model.errorMessage {
-                    Text(err)
-                        .scaledFont(size: 12, relativeTo: .caption)
-                        .foregroundStyle(Color(hex: "#E63946"))
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 32)
-                }
-            }
-            .padding(.bottom, 44)
-        }
-    }
-
-    // MARK: - Result
-
-    private var resultScreen: some View {
-        VStack(spacing: 0) {
-            Spacer()
-
-            ZStack {
-                Circle()
-                    .fill(theme.accent.opacity(0.10))
-                    .frame(width: 96, height: 96)
-                Image(systemName: "chart.bar.doc.horizontal")
-                    .font(.system(size: 40))
-                    .foregroundStyle(theme.accent)
-            }
-            .accessibilityHidden(true)
-            .padding(.bottom, 20)
-
-            Text("Interview Complete!")
-                .scaledFont(size: 26, weight: .heavy, relativeTo: .largeTitle)
-                .foregroundStyle(Color.shadowGrey)
-                .padding(.bottom, 6)
-            Text("Based on your \(model.questions.count) answers")
-                .scaledFont(size: 15, relativeTo: .body)
-                .foregroundStyle(Color.mutedText)
-                .padding(.bottom, 28)
-
-            VStack(spacing: 14) {
-                scoreBar(label: "Communication Confidence", score: model.confidenceScore, color: theme.accent)
-                scoreBar(label: "Persuasion Clarity",       score: model.clarityScore,    color: Color.verifiedBlue)
-            }
-            .padding(.horizontal, 24)
-
-            Text("Practice regularly to improve your scores and get better job matches.")
-                .scaledFont(size: 13, relativeTo: .footnote)
-                .foregroundStyle(Color.dimText)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 32)
-                .padding(.top, 20)
-
-            Spacer()
-
-            HStack(spacing: 10) {
-                Button { model.reset() } label: {
-                    Text("Try Again")
-                        .scaledFont(size: 15, weight: .semibold, relativeTo: .body)
-                        .foregroundStyle(Color.shadowGrey)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
-                        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .stroke(Color.shadowGrey.opacity(0.15), lineWidth: 1.5))
-                }
-                .buttonStyle(PressScaleStyle(scale: 0.97))
-
-                Button { dismiss() } label: {
-                    Text("Done")
-                        .scaledFont(size: 15, weight: .bold, relativeTo: .body)
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
-                        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(theme.accent))
-                        .shadow(color: theme.accent.opacity(0.34), radius: 10, x: 0, y: 5)
-                }
-                .buttonStyle(PressScaleStyle(scale: 0.97))
-            }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 36)
-        }
-    }
-
-    // MARK: - Helpers
-
-    private func botAvatar(pulsing: Bool) -> some View {
-        ZStack {
-            ForEach(0..<3, id: \.self) { i in
-                let ringOpacity: Double = pulsing ? max(0, 0.14 - Double(i) * 0.04) : 0
-                let ringSize = CGFloat(88 + i * 22)
-                Circle()
-                    .stroke(theme.accent.opacity(ringOpacity), lineWidth: 1.5)
-                    .frame(width: ringSize, height: ringSize)
-                    .scaleEffect(pulsing ? 1.0 : 0.85)
-                    .animation(
-                        pulsing
-                            ? .easeInOut(duration: 1.2).repeatForever(autoreverses: true).delay(Double(i) * 0.35)
-                            : .default,
-                        value: pulsing)
-            }
-            Circle()
-                .fill(LinearGradient(
-                    colors: [Color.shadowGrey, theme.accent],
-                    startPoint: .topLeading, endPoint: .bottomTrailing
-                ))
-                .frame(width: 80, height: 80)
-                .shadow(color: theme.accent.opacity(0.36), radius: 12, x: 0, y: 6)
-            Image(systemName: "waveform")
-                .font(.system(size: 32))
-                .foregroundStyle(.white)
-        }
-        .accessibilityHidden(true)
-    }
-
-    private func infoRow(icon: String, label: String) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: icon)
-                .font(.system(size: 14))
-                .foregroundStyle(theme.accent)
-                .frame(width: 20)
-                .accessibilityHidden(true)
+    private func scoreRing(label: String, value: Int) -> some View {
+        VStack(spacing: 6) {
+            VouchScoreRing(score: value, size: 70)
             Text(label)
-                .scaledFont(size: 14, relativeTo: .body)
-                .foregroundStyle(Color.mutedText)
-            Spacer()
+                .scaledFont(size: 11, weight: .heavy, relativeTo: .caption2)
+                .foregroundStyle(Color.dimText)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.soft))
-        .accessibilityElement(children: .combine)
     }
 
-    private func scoreBar(label: String, score: Int, color: Color) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(label)
-                    .scaledFont(size: 14, weight: .semibold, relativeTo: .subheadline)
-                    .foregroundStyle(Color.shadowGrey)
-                Spacer()
-                Text("\(score)%")
-                    .scaledFont(size: 22, weight: .heavy, relativeTo: .title3)
-                    .foregroundStyle(color)
+    private var failedScreen: some View {
+        VStack(spacing: 16) {
+            Spacer()
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 48))
+                .foregroundStyle(Color(hex: "#E63946"))
+            Text(theme.t("Interview failed", "इंटरव्यू विफल"))
+                .scaledFont(size: 18, weight: .heavy, relativeTo: .title3)
+                .foregroundStyle(Color.shadowGrey)
+            Text(model.errorMessage ?? "")
+                .scaledFont(size: 13, relativeTo: .footnote)
+                .foregroundStyle(Color.mutedText)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 28)
+            Spacer()
+            Button { dismiss() } label: {
+                Text(theme.t("Close", "बंद करें"))
+                    .scaledFont(size: 16, weight: .bold, relativeTo: .headline)
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity).padding(.vertical, 17)
+                    .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(theme.accent))
             }
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(Color.shadowGrey.opacity(0.10))
-                    Capsule()
-                        .fill(color)
-                        .frame(width: geo.size.width * CGFloat(score) / 100)
-                        .animation(.easeOut(duration: 1.0).delay(0.3), value: score)
-                }
-            }
-            .frame(height: 8)
+            .padding(.horizontal, 24).padding(.bottom, 32)
         }
-        .padding(16)
-        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.soft))
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(label): \(score) percent")
+    }
+}
+
+// MARK: - View model
+
+@Observable @MainActor
+final class InterviewSessionModel {
+    enum Phase: Equatable { case language, connecting, live, result, failed }
+
+    let trade: String
+    private(set) var phase: Phase = .language
+    private(set) var session: InterviewSession?
+    private(set) var scores: InterviewScores?
+    private(set) var errorMessage: String?
+
+    var lastTextTurn: String { session?.lastTextTurn ?? "" }
+    var isSpeaking: Bool {
+        if case .speaking = session?.state { return true }
+        return false
+    }
+
+    init(trade: String) { self.trade = trade }
+
+    func start(lang: String) async {
+        phase = .connecting
+        guard let token = TokenStore.shared.token else {
+            errorMessage = "You must be signed in to start an interview."
+            phase = .failed
+            return
+        }
+        do {
+            let live = try InterviewSession(trade: trade, lang: lang, token: token)
+            live.onScores = { [weak self] s in
+                guard let self else { return }
+                self.scores = s
+                // Backend persists scores server-side. Once we receive
+                // them, transition to the result screen and let the
+                // session close itself on the {"done"} frame.
+                Task { await MainActor.run { self.phase = .result } }
+            }
+            live.onError = { [weak self] msg in
+                guard let self else { return }
+                self.errorMessage = msg
+                self.phase = .failed
+            }
+            session = live
+            await live.start()
+            phase = .live
+        } catch {
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            phase = .failed
+        }
+    }
+
+    func stop() async {
+        await session?.stop()
     }
 }

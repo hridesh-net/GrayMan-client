@@ -11,21 +11,22 @@ struct ExploreView: View {
     let onViewProfile: (Worker) -> Void
     let onGoProfile: () -> Void
 
-    @State private var radius: Int = 50
+    @State private var model = ExploreViewModel()
     @State private var index: Int = 0
     @State private var trayOpen: Bool = false
-    @State private var selectedCategory: String = "All"
     @State private var showVouchSheet = false
+    @State private var showMessageSheet = false
+    @State private var draftMessage: String = ""
+    @State private var messageError: String? = nil
+    @State private var sendingMessage: Bool = false
 
-    private let workers = Worker.samples
     private let radiusSteps = Worker.radiusSteps
 
-    private var filtered: [Worker] {
-        workers.filter {
-            $0.distanceKm <= Double(radius) &&
-            (selectedCategory == "All" || $0.trade == selectedCategory)
-        }
-    }
+    // Radius and category live on the VM; expose bindings here.
+    private var radius: Int { model.radius }
+    private var selectedCategory: String { model.selectedCategory }
+
+    private var filtered: [Worker] { model.workers }
 
     private var safeIndex: Int {
         max(0, min(index, filtered.count - 1))
@@ -75,6 +76,90 @@ struct ExploreView: View {
                 GiveVouchSheet(worker: worker)
             }
         }
+        .task { await model.onAppear() }
+        .onChange(of: model.workers) { _, _ in
+            // When the result set changes, snap back to the first card.
+            if !filtered.indices.contains(index) { index = 0 }
+            if let id = currentWorker?.id {
+                Task { await model.loadInteractions(for: id) }
+            }
+        }
+        .onChange(of: safeIndex) { _, _ in
+            if let id = currentWorker?.id {
+                Task { await model.loadInteractions(for: id) }
+            }
+        }
+        .sheet(isPresented: $showMessageSheet) {
+            messageComposer
+                .presentationDetents([.medium])
+        }
+    }
+
+    @ViewBuilder
+    private var messageComposer: some View {
+        VStack(spacing: 16) {
+            Capsule()
+                .fill(Color.shadowGrey.opacity(0.2))
+                .frame(width: 44, height: 5)
+                .padding(.top, 10)
+            Text(theme.t("Send a message", "संदेश भेजें"))
+                .scaledFont(size: 20, weight: .heavy, relativeTo: .title2)
+                .foregroundStyle(Color.shadowGrey)
+            if let worker = currentWorker {
+                Text(theme.t("to \(worker.name)", "\(worker.name) को"))
+                    .scaledFont(size: 13, relativeTo: .footnote)
+                    .foregroundStyle(Color.mutedText)
+            }
+            TextField(theme.t("Hi! Are you available this week?",
+                              "नमस्ते! क्या आप इस सप्ताह उपलब्ध हैं?"),
+                      text: $draftMessage, axis: .vertical)
+                .lineLimit(4, reservesSpace: true)
+                .scaledFont(size: 15, relativeTo: .body)
+                .foregroundStyle(Color.shadowGrey)
+                .padding(14)
+                .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.soft))
+                .padding(.horizontal, 20)
+            if let err = messageError {
+                Text(err)
+                    .scaledFont(size: 12, weight: .semibold, relativeTo: .caption)
+                    .foregroundStyle(Color(hex: "#E63946"))
+            }
+            Button { sendMessage() } label: {
+                HStack(spacing: 8) {
+                    if sendingMessage {
+                        ProgressView().controlSize(.small).tint(.white)
+                    }
+                    Text(sendingMessage ? theme.t("Sending…", "भेज रहे हैं…")
+                                       : theme.t("Send", "भेजें"))
+                        .scaledFont(size: 16, weight: .bold, relativeTo: .headline)
+                }
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 16)
+                .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(theme.accent))
+            }
+            .padding(.horizontal, 20)
+            .disabled(draftMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || sendingMessage)
+            Spacer()
+        }
+    }
+
+    private func sendMessage() {
+        guard let worker = currentWorker else { return }
+        let body = draftMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !body.isEmpty else { return }
+        sendingMessage = true
+        messageError = nil
+        Task {
+            defer { sendingMessage = false }
+            do {
+                try await model.sendMessage(to: worker.id, body: body)
+                draftMessage = ""
+                showMessageSheet = false
+            } catch {
+                messageError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            }
+        }
     }
 
     // MARK: - Category filter bar
@@ -85,7 +170,7 @@ struct ExploreView: View {
                 ForEach(Worker.allCategories, id: \.self) { cat in
                     let on = cat == selectedCategory
                     Button {
-                        selectedCategory = cat
+                        model.selectedCategory = cat
                         index = 0
                     } label: {
                         Text(cat)
@@ -243,7 +328,7 @@ struct ExploreView: View {
     private func changeRadius(by delta: Int) {
         guard let i = radiusSteps.firstIndex(of: radius) else { return }
         let newIndex = max(0, min(radiusSteps.count - 1, i + delta))
-        radius = radiusSteps[newIndex]
+        model.radius = radiusSteps[newIndex]
         if safeIndex >= filtered.count { index = max(0, filtered.count - 1) }
     }
 
@@ -413,71 +498,139 @@ struct ExploreView: View {
 
     // MARK: - Right-hand action column
 
-    private struct ActionDef: Identifiable {
-        let id: String
-        let systemImage: String
-        let label: String?
-        let a11yLabel: String
-    }
-
-    private var actionDefs: [ActionDef] {
-        [
-            ActionDef(id: "like", systemImage: "heart.fill", label: "218", a11yLabel: "Like, 218"),
-            ActionDef(id: "chat", systemImage: "bubble.left.fill", label: "34", a11yLabel: theme.t("Message, 34", "संदेश, 34")),
-            ActionDef(id: "share", systemImage: "arrow.up.right", label: nil, a11yLabel: theme.t("Share", "शेयर")),
-            ActionDef(id: "vouch", systemImage: "star.fill", label: theme.t("Vouch", "Vouch करें"), a11yLabel: theme.t("Vouch", "Vouch करें")),
-        ]
-    }
-
     private var actionColumn: some View {
-        VStack(spacing: 16) {
-            ForEach(actionDefs) { def in
-                Button {
-                    if def.id == "vouch" { showVouchSheet = true }
-                    // other actions stub to backend
-                } label: {
-                    VStack(spacing: 4) {
-                        ZStack {
-                            Circle()
-                                .fill(.white.opacity(0.12))
-                                .overlay(Circle().stroke(.white.opacity(0.20), lineWidth: 1))
-                                .frame(width: 46, height: 46)
-                                .shadow(color: .black.opacity(0.30), radius: 6, x: 0, y: 4)
-                            Image(systemName: def.systemImage)
-                                .font(.system(size: 18))
-                                .foregroundStyle(.white)
-                        }
-                        if let label = def.label {
-                            Text(label)
-                                .scaledFont(size: 10, weight: .semibold, relativeTo: .caption2)
-                                .foregroundStyle(.white.opacity(0.65))
-                        }
-                    }
-                }
-                .buttonStyle(PressScaleStyle(scale: 0.90))
-                .accessibilityLabel(def.a11yLabel)
+        let workerID = currentWorker?.id ?? ""
+        let snap = model.interactions[workerID] ?? .init()
+        return VStack(spacing: 16) {
+            actionTile(
+                icon: snap.hasLiked ? "heart.fill" : "heart",
+                label: "\(snap.counts.likes)",
+                tint: snap.hasLiked ? Color(hex: "#E63946") : .white,
+                a11y: snap.hasLiked ? "Unlike" : "Like"
+            ) {
+                Task { await model.toggleLike(workerID: workerID) }
+            }
+            actionTile(
+                icon: "bubble.left.fill",
+                label: "\(snap.counts.messages)",
+                tint: .white,
+                a11y: theme.t("Message", "संदेश")
+            ) {
+                showMessageSheet = true
+            }
+            ShareLink(item: shareItem) {
+                actionTileLabel(icon: "arrow.up.right", label: nil, tint: .white)
+            }
+            .accessibilityLabel(theme.t("Share", "शेयर"))
+            actionTile(
+                icon: snap.hasSaved ? "bookmark.fill" : "bookmark",
+                label: nil,
+                tint: snap.hasSaved ? Color(hex: "#F4A261") : .white,
+                a11y: snap.hasSaved ? theme.t("Unsave", "अनसेव") : theme.t("Save", "सेव")
+            ) {
+                Task { await model.toggleSave(workerID: workerID) }
+            }
+            actionTile(
+                icon: snap.hasVouched ? "checkmark.seal.fill" : "star.fill",
+                label: theme.t(snap.hasVouched ? "Vouched" : "Vouch",
+                               snap.hasVouched ? "Vouch किया" : "Vouch करें"),
+                tint: snap.hasVouched ? Color.verifiedBlue : .white,
+                a11y: theme.t("Vouch", "Vouch करें")
+            ) {
+                showVouchSheet = true
             }
         }
         .padding(.bottom, 4)
+        .disabled(currentWorker == nil)
+    }
+
+    private var shareItem: String {
+        if let w = currentWorker {
+            return "Check out \(w.name) on sthapna.ai — \(w.trade) in \(w.location)"
+        }
+        return "Check out sthapna.ai, a network of skilled workers."
+    }
+
+    private func actionTile(
+        icon: String, label: String?, tint: Color, a11y: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            actionTileLabel(icon: icon, label: label, tint: tint)
+        }
+        .buttonStyle(PressScaleStyle(scale: 0.90))
+        .accessibilityLabel(a11y)
+    }
+
+    private func actionTileLabel(icon: String, label: String?, tint: Color) -> some View {
+        VStack(spacing: 4) {
+            ZStack {
+                Circle()
+                    .fill(.white.opacity(0.12))
+                    .overlay(Circle().stroke(.white.opacity(0.20), lineWidth: 1))
+                    .frame(width: 46, height: 46)
+                    .shadow(color: .black.opacity(0.30), radius: 6, x: 0, y: 4)
+                Image(systemName: icon)
+                    .font(.system(size: 18))
+                    .foregroundStyle(tint)
+            }
+            if let label {
+                Text(label)
+                    .scaledFont(size: 10, weight: .semibold, relativeTo: .caption2)
+                    .foregroundStyle(.white.opacity(0.75))
+                    .lineLimit(1)
+            }
+        }
     }
 
     // MARK: - Empty state
 
+    @ViewBuilder
     private var emptyState: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 40))
-                .foregroundStyle(.white.opacity(0.5))
-                .accessibilityHidden(true)
-            Text(theme.t("No workers in \(radius) km", "\(radius) km में कोई कामगार नहीं"))
-                .scaledFont(size: 16, weight: .heavy, relativeTo: .headline)
+        switch model.state {
+        case .loading, .idle:
+            VStack(spacing: 14) {
+                ProgressView().tint(.white)
+                Text(theme.t("Finding workers near you…", "आस-पास के कामगार ढूंढ रहे हैं…"))
+                    .scaledFont(size: 13, relativeTo: .footnote)
+                    .foregroundStyle(.white.opacity(0.65))
+            }
+        case .failed(let message):
+            VStack(spacing: 12) {
+                Image(systemName: "wifi.exclamationmark")
+                    .font(.system(size: 40))
+                    .foregroundStyle(.white.opacity(0.6))
+                Text(theme.t("Couldn't reach the server", "सर्वर से कनेक्ट नहीं हो सका"))
+                    .scaledFont(size: 16, weight: .heavy, relativeTo: .headline)
+                    .foregroundStyle(.white)
+                Text(message)
+                    .scaledFont(size: 12, relativeTo: .caption)
+                    .foregroundStyle(.white.opacity(0.55))
+                    .multilineTextAlignment(.center)
+                Button(theme.t("Try again", "फिर कोशिश करें")) {
+                    Task { await model.reload() }
+                }
+                .scaledFont(size: 13, weight: .bold, relativeTo: .footnote)
                 .foregroundStyle(.white)
-            Text(theme.t("Try increasing the radius above", "ऊपर से दूरी बढ़ाएं"))
-                .scaledFont(size: 13, relativeTo: .footnote)
-                .foregroundStyle(.white.opacity(0.5))
+                .padding(.horizontal, 18)
+                .padding(.vertical, 8)
+                .background(Capsule().fill(theme.accent))
+            }
+            .padding(.horizontal, 40)
+        case .loaded:
+            VStack(spacing: 12) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 40))
+                    .foregroundStyle(.white.opacity(0.5))
+                Text(theme.t("No workers in \(radius) km", "\(radius) km में कोई कामगार नहीं"))
+                    .scaledFont(size: 16, weight: .heavy, relativeTo: .headline)
+                    .foregroundStyle(.white)
+                Text(theme.t("Try increasing the radius above", "ऊपर से दूरी बढ़ाएं"))
+                    .scaledFont(size: 13, relativeTo: .footnote)
+                    .foregroundStyle(.white.opacity(0.5))
+            }
+            .padding(.horizontal, 40)
         }
-        .padding(.horizontal, 40)
-        .accessibilityElement(children: .combine)
     }
 
     // MARK: - Morphing nav (collapsed circle → glass tab bar)

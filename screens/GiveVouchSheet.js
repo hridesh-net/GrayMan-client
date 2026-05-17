@@ -14,6 +14,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useTheme } from '../src/AppTheme';
 import PressScale from '../src/components/PressScale';
 import VouchScoreRing from '../src/components/VouchScoreRing';
+import { workerService } from '../src/api/workerService';
 import { Colors, Spacing, Radius, Shadow } from '../src/theme';
 
 const RELATIONSHIPS = [
@@ -33,14 +34,20 @@ export default function GiveVouchSheet({ worker, onClose }) {
 
   const canSubmit = selectedRelationship >= 0 && starRating > 0;
 
-  const handleSubmit = () => {
-    if (!canSubmit) return;
+  const handleSubmit = async () => {
+    if (!canSubmit || !worker?.id) return;
     setSubmitting(true);
-    // Mock submit delay
-    setTimeout(() => {
-      setSubmitting(false);
+    try {
+      const skillIndices = worker.tags?.length
+        ? [0, 1].filter(i => i < worker.tags.length)
+        : [0];
+      await workerService.giveVouch(worker.id, skillIndices);
       setStep('success');
-    }, 800);
+    } catch (e) {
+      alert(e.message || 'Could not send vouch');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   if (step === 'success') {

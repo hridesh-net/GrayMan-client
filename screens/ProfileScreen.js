@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { ActivityIndicator, Linking, Alert } from 'react-native';
 import {
   View,
   Text,
@@ -17,7 +18,13 @@ import { useTheme } from '../src/AppTheme';
 import Blobs from '../src/components/Blobs';
 import PressScale from '../src/components/PressScale';
 import VouchScoreRing from '../src/components/VouchScoreRing';
+import { workerService } from '../src/api/workerService';
 import { Colors, Shadow, Radius } from '../src/theme';
+import NotificationsScreen from './NotificationsScreen';
+import VoiceInterviewScreen from './VoiceInterviewScreen';
+import ProofOfWorkScreen from './ProofOfWorkScreen';
+import GiveVouchSheet from './GiveVouchSheet';
+import SettingsScreen from './SettingsScreen';
 
 // ---------------------------------------------------------------------------
 // Availability states
@@ -170,18 +177,53 @@ const tabStyles = StyleSheet.create({
 // Main ProfileScreen
 // ---------------------------------------------------------------------------
 export default function ProfileScreen({
-  userName = 'Ramesh Kumar',
-  worker = null,
-  voiceInterviewService,   // ignored — stubbed on RN
+  userName = '',
+  worker: workerProp = null,
   onBack = null,
   onExplore = null,
+  onSignOut = null,
+  onRecordReel = null,
 }) {
   const { accent, t } = useTheme();
   const insets = useSafeAreaInsets();
 
+  const isSelf = workerProp == null;
+  const [profile, setProfile] = useState(workerProp);
+  const [loading, setLoading] = useState(isSelf && !workerProp);
+  const [canVouch, setCanVouch] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  const loadProfile = useCallback(async () => {
+    if (workerProp) {
+      setProfile(workerProp);
+      try {
+        const can = await workerService.hasCompletedHire(workerProp.id);
+        setCanVouch(can);
+      } catch { /* ignore */ }
+      return;
+    }
+    setLoading(true);
+    try {
+      const w = await workerService.fetchSelf();
+      setProfile(w);
+      workerService.syncSelfLocationIfNeeded();
+      const notifs = await workerService.fetchNotifications(true, 20);
+      setUnreadCount((notifs?.notifications || notifs || []).length);
+    } catch (e) {
+      Alert.alert('Error', e.message || 'Could not load profile');
+    } finally {
+      setLoading(false);
+    }
+  }, [workerProp]);
+
+  useEffect(() => {
+    loadProfile();
+  }, [loadProfile]);
+
+  const worker = profile;
+
   // ---- Derived display values --------------------------------------------
-  const isSelf         = worker == null;
-  const displayName    = worker?.name    ?? userName;
+  const displayName    = worker?.name ?? (userName || '…');
   const displayTrade   = worker?.trade   ?? t('Electrician · 8 yrs exp', 'इलेक्ट्रीशियन · 8 वर्ष अनुभव');
   const displayLocation = (worker?.location?.split('·')[0]?.trim()) ?? 'Mumbai';
   const displayJobs    = worker ? String(worker.jobs) : '48';
@@ -202,7 +244,48 @@ export default function ProfileScreen({
   const [showSettings,       setShowSettings]       = useState(false);
   const [showAddSheet,       setShowAddSheet]       = useState(false);
   const [isSaved,            setIsSaved]            = useState(false);
-  const [availability,       setAvailability]       = useState(0);  // 0=Available 1=Busy 2=Away
+  const [availability,       setAvailability]       = useState(0);
+  const [showNotifications,  setShowNotifications]  = useState(false);
+
+  useEffect(() => {
+    if (!worker?.id || isSelf) return;
+    workerService.fetchMyActionState(worker.id).then(s => {
+      setIsSaved(s?.has_saved ?? false);
+    }).catch(() => {});
+  }, [worker?.id, isSelf]);
+
+  const toggleSave = async () => {
+    if (!worker?.id) return;
+    try {
+      if (isSaved) {
+        await workerService.unsave(worker.id);
+        setIsSaved(false);
+      } else {
+        await workerService.save(worker.id);
+        setIsSaved(true);
+      }
+    } catch (e) {
+      Alert.alert('Error', e.message);
+    }
+  };
+
+  const requestHire = async () => {
+    if (!worker?.id) return;
+    try {
+      await workerService.createHire(worker.id);
+      Alert.alert(t('Sent', 'भेजा'), t('Hire request sent', 'हायर अनुरोध भेजा गया'));
+    } catch (e) {
+      Alert.alert('Error', e.message);
+    }
+  };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={[styles.root, { alignItems: 'center', justifyContent: 'center' }]}>
+        <ActivityIndicator size="large" color={accent} />
+      </SafeAreaView>
+    );
+  }
 
   // -------------------------------------------------------------------------
   return (
@@ -217,11 +300,21 @@ export default function ProfileScreen({
         {isSelf ? (
           <>
             <Text style={styles.headerLogo}>GrayMan</Text>
-            <View style={styles.liveRow}>
-              <View style={[styles.liveDot, { backgroundColor: accent }]} />
-              <Text style={[styles.liveText, { color: accent }]}>
-                {t('Live', 'लाइव')}
-              </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <PressScale onPress={() => setShowNotifications(true)} style={styles.notifBtn}>
+                <Text style={styles.notifIcon}>🔔</Text>
+                {unreadCount > 0 && (
+                  <View style={[styles.notifBadge, { backgroundColor: accent }]}>
+                    <Text style={styles.notifBadgeText}>{unreadCount}</Text>
+                  </View>
+                )}
+              </PressScale>
+              <View style={styles.liveRow}>
+                <View style={[styles.liveDot, { backgroundColor: accent }]} />
+                <Text style={[styles.liveText, { color: accent }]}>
+                  {t('Live', 'लाइव')}
+                </Text>
+              </View>
             </View>
           </>
         ) : (
@@ -464,37 +557,30 @@ export default function ProfileScreen({
 
       {/* ── Modals ──────────────────────────────────────────────────────────── */}
 
-      {/* 1. AI Voice Interview */}
-      <PlaceholderModal
-        visible={showVoiceInterview}
-        title={t('AI Interview', 'AI इंटरव्यू')}
-        onClose={() => setShowVoiceInterview(false)}
-        accent={accent}
-      />
+      <Modal visible={showVoiceInterview} animationType="slide" presentationStyle="fullScreen">
+        <VoiceInterviewScreen
+          trade={worker?.tradeRaw || worker?.trade}
+          onClose={() => setShowVoiceInterview(false)}
+        />
+      </Modal>
 
-      {/* 2. Proof of Work */}
-      <PlaceholderModal
-        visible={showProofOfWork}
-        title={t('Proof of Work', 'काम का प्रमाण')}
-        onClose={() => setShowProofOfWork(false)}
-        accent={accent}
-      />
+      <Modal visible={showProofOfWork} animationType="slide" presentationStyle="fullScreen">
+        <ProofOfWorkScreen workerId={worker?.id} onClose={() => setShowProofOfWork(false)} />
+      </Modal>
 
-      {/* 3. Give Vouch */}
-      <PlaceholderModal
-        visible={showGiveVouch}
-        title={t('Give a Vouch', 'वाउच दें')}
-        onClose={() => setShowGiveVouch(false)}
-        accent={accent}
-      />
+      <Modal visible={showGiveVouch} animationType="slide" presentationStyle="pageSheet">
+        <GiveVouchSheet worker={worker} onClose={() => setShowGiveVouch(false)} />
+      </Modal>
 
-      {/* 4. Settings */}
-      <PlaceholderModal
-        visible={showSettings}
-        title={t('Settings', 'सेटिंग्स')}
-        onClose={() => setShowSettings(false)}
-        accent={accent}
-      />
+      <Modal visible={showSettings} animationType="slide" presentationStyle="fullScreen">
+        <SettingsScreen onClose={() => setShowSettings(false)} onSignOut={onSignOut} />
+      </Modal>
+
+      <Modal visible={showNotifications} animationType="slide" presentationStyle="fullScreen">
+        <NotificationsScreen
+          onClose={() => { setShowNotifications(false); loadProfile(); }}
+        />
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -523,6 +609,20 @@ const styles = StyleSheet.create({
     letterSpacing: -0.34,
     color: Colors.shadowGrey,
   },
+  notifBtn: { position: 'relative', padding: 4 },
+  notifIcon: { fontSize: 22 },
+  notifBadge: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  notifBadgeText: { color: '#fff', fontSize: 10, fontWeight: '800' },
   liveRow: {
     flexDirection: 'row',
     alignItems: 'center',

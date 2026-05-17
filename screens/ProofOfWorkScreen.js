@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { ActivityIndicator, Alert } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import {
   View,
   Text,
@@ -13,18 +15,54 @@ import { StatusBar } from 'expo-status-bar';
 
 import { useTheme } from '../src/AppTheme';
 import PressScale from '../src/components/PressScale';
+import { workerService } from '../src/api/workerService';
 import { Colors, Spacing, Radius, Shadow } from '../src/theme';
 
 function formatDate(date) {
   return date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
-export default function ProofOfWorkScreen({ onClose }) {
+export default function ProofOfWorkScreen({ workerId, onClose }) {
   const { accent, t } = useTheme();
 
   const [sessions, setSessions] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [showAddSheet, setShowAddSheet] = useState(false);
   const [newCaption, setNewCaption] = useState('');
+
+  const loadShowcase = useCallback(async () => {
+    if (!workerId) { setLoading(false); return; }
+    try {
+      const items = await workerService.fetchShowcase(workerId, 'photo');
+      setSessions((items || []).map(it => ({
+        id: it.id,
+        date: it.captured_at ? new Date(it.captured_at).toLocaleDateString('en-IN') : '—',
+        caption: it.title || it.description || '',
+        hasPhoto: true,
+      })));
+    } catch (e) {
+      Alert.alert('Error', e.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [workerId]);
+
+  useEffect(() => {
+    loadShowcase();
+  }, [loadShowcase]);
+
+  const pickPhoto = async () => {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) return;
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.8,
+    });
+    if (result.canceled || !result.assets?.[0]) return;
+    setNewCaption('Work progress');
+    setShowAddSheet(true);
+    Alert.alert(t('Photo selected', 'फ़ोटो चुनी'), t('Add a caption and save', 'कैप्शन जोड़ें और सेव करें'));
+  };
 
   const handleSaveProgress = () => {
     if (!newCaption.trim()) return;
@@ -77,7 +115,9 @@ export default function ProofOfWorkScreen({ onClose }) {
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
       >
-        {sessions.length === 0 ? (
+        {loading ? (
+          <ActivityIndicator color={accent} style={{ marginTop: 24 }} />
+        ) : sessions.length === 0 ? (
           <View style={styles.emptyState}>
             <Text style={styles.emptyEmoji}>📸</Text>
             <Text style={styles.emptyTitle}>{t('No sessions yet', 'अभी कोई सेशन नहीं')}</Text>

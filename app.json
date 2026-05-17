@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "GrayMan-UI",
-    "slug": "GrayMan-UI",
+    "name": "sthapna.ai",
+    "slug": "grayman",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -10,20 +10,61 @@
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#F8F7F4"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": false,
+      "bundleIdentifier": "com.grayman.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Record your introduction reel.",
+        "NSMicrophoneUsageDescription": "Record audio for reels and AI interviews.",
+        "NSLocationWhenInUseUsageDescription": "Find skilled workers near you.",
+        "NSSpeechRecognitionUsageDescription": "Transcribe your reel for better profile matching."
+      }
     },
     "android": {
+      "package": "com.grayman.app",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#F8F7F4"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.INTERNET"
+      ],
+      "usesCleartextTraffic": true
     },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Record your introduction reel.",
+          "microphonePermission": "Record audio for reels and AI interviews.",
+          "recordAudioAndroid": true
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Find skilled workers near you."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Add proof-of-work photos to your profile."
+        }
+      ]
+    ],
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "apiBaseUrl": "http://192.168.1.38:8000/api/v1"
     }
   }
 }

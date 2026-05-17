@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <!--
+            Allows plain-HTTP loads to local-network and link-local hosts
+            (192.168.x.x, 10.x.x.x, *.local, etc.) so the iOS app can talk
+            to the FastAPI backend running on the dev machine over wifi
+            without setting up TLS. Public-internet HTTP is still blocked.
+        -->
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+    </dict>
+    <!-- iOS 14+ requires explicit declaration to use Bonjour/LAN. -->
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>sthapna.ai connects to the development API server running on your local network.</string>
+
+    <!--
+        Location permission lives here instead of Package.swift because
+        AppleProductTypes.Capability in Swift Playgrounds doesn't yet expose
+        a .location case. LocationService requests
+        `kCLLocationAccuracyThreeKilometers` so even with the precise-location
+        toggle on, iOS returns ~3 km accuracy at best.
+    -->
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>sthapna.ai uses your approximate location (~3 km) to show nearby workers and filter by radius. Precise GPS is never requested.</string>
+</dict>
+</plist>

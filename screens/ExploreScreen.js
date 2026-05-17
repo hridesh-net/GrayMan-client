@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   PanResponder,
   TouchableOpacity,
   Dimensions,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -16,7 +17,8 @@ import { BlurView } from 'expo-blur';
 import { useTheme } from '../src/AppTheme';
 import Blobs from '../src/components/Blobs';
 import PressScale from '../src/components/PressScale';
-import { WorkerSamples, AllCategories } from '../src/workers';
+import { AllCategories } from '../src/workers';
+import { workerService } from '../src/api/workerService';
 import { Colors, Radius, Shadow } from '../src/theme';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -31,15 +33,35 @@ export default function ExploreScreen({ onBack, onViewProfile, onGoProfile }) {
   const [radius, setRadius] = useState(5);
   const [activeCategory, setActiveCategory] = useState('All');
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [workers, setWorkers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [liked, setLiked] = useState(false);
+  const [saved, setSaved] = useState(false);
 
-  // Filter workers by category (distance filter is UI-only — all samples shown
-  // regardless of km since there is no real geo data).
-  const filtered = useMemo(() => {
-    if (activeCategory === 'All') return WorkerSamples;
-    return WorkerSamples.filter(w =>
-      w.trade.toLowerCase().startsWith(activeCategory.toLowerCase()),
-    );
-  }, [activeCategory]);
+  const loadFeed = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const list = await workerService.fetchExplore({
+        trade: activeCategory === 'All' ? undefined : activeCategory,
+        radiusKm: radius,
+      });
+      setWorkers(list);
+      setCurrentIndex(0);
+    } catch (e) {
+      setError(e.message || 'Could not load workers');
+      setWorkers([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [activeCategory, radius]);
+
+  useEffect(() => {
+    loadFeed();
+  }, [loadFeed]);
+
+  const filtered = workers;
 
   // Reset card index when filter changes.
   const prevCategory = useRef(activeCategory);
@@ -51,6 +73,14 @@ export default function ExploreScreen({ onBack, onViewProfile, onGoProfile }) {
 
   const safeIndex = Math.min(currentIndex, Math.max(filtered.length - 1, 0));
   const worker = filtered[safeIndex];
+
+  useEffect(() => {
+    if (!worker?.id) return;
+    workerService.fetchMyActionState(worker.id).then(s => {
+      setLiked(s?.has_liked ?? false);
+      setSaved(s?.has_saved ?? false);
+    }).catch(() => {});
+  }, [worker?.id]);
 
   // -------------------------------------------------------------------------
   // PanResponder — left/right advances index, up/down also advances (vertical
@@ -180,8 +210,12 @@ export default function ExploreScreen({ onBack, onViewProfile, onGoProfile }) {
       {/* ------------------------------------------------------------------ */}
       {/* WORKER CARD AREA                                                    */}
       {/* ------------------------------------------------------------------ */}
-      {filtered.length === 0 ? (
-        <EmptyState radius={radius} t={t} />
+      {loading ? (
+        <View style={styles.loadingBox}>
+          <ActivityIndicator size="large" color={accent} />
+        </View>
+      ) : filtered.length === 0 ? (
+        <EmptyState radius={radius} t={t} message={error} />
       ) : (
         <View style={styles.cardArea} {...panResponder.panHandlers}>
           <WorkerCard
@@ -219,7 +253,36 @@ export default function ExploreScreen({ onBack, onViewProfile, onGoProfile }) {
       {/* ------------------------------------------------------------------ */}
       <View style={styles.actionRow}>
         {ACTION_BUTTONS.map(btn => (
-          <PressScale key={btn.label} style={styles.actionBtn}>
+          <PressScale
+            key={btn.label}
+            style={styles.actionBtn}
+            onPress={async () => {
+              if (!worker?.id) return;
+              try {
+                if (btn.id === 'like') {
+                  if (liked) {
+                    await workerService.unlike(worker.id);
+                    setLiked(false);
+                  } else {
+                    await workerService.like(worker.id);
+                    setLiked(true);
+                  }
+                } else if (btn.id === 'save') {
+                  if (saved) {
+                    await workerService.unsave(worker.id);
+                    setSaved(false);
+                  } else {
+                    await workerService.save(worker.id);
+                    setSaved(true);
+                  }
+                } else if (btn.id === 'message') {
+                  await workerService.sendMessage(worker.id, 'Hi, I saw your profile on GrayMan.');
+                } else if (btn.id === 'vouch') {
+                  onViewProfile(worker);
+                }
+              } catch { /* ignore */ }
+            }}
+          >
             <Text style={styles.actionBtnIcon}>{btn.icon}</Text>
           </PressScale>
         ))}
@@ -334,11 +397,11 @@ function WorkerCard({ worker, accent, onViewProfile }) {
 // ---------------------------------------------------------------------------
 // EmptyState
 // ---------------------------------------------------------------------------
-function EmptyState({ radius, t }) {
+function EmptyState({ radius, t, message }) {
   return (
     <View style={styles.emptyState}>
       <Text style={styles.emptyTitle}>
-        {t(`No workers in ${radius} km`, `${radius} km में कोई कामगार नहीं`)}
+        {message || t(`No workers in ${radius} km`, `${radius} km में कोई कामगार नहीं`)}
       </Text>
       <Text style={styles.emptySubtitle}>
         {t(
@@ -652,6 +715,11 @@ const styles = StyleSheet.create({
   },
 
   // Empty state
+  loadingBox: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   emptyState: {
     flex: 1,
     alignItems: 'center',

@@ -1,26 +1,23 @@
-import React, { useState } from 'react';
-import { StyleSheet } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import { StyleSheet, View, ActivityIndicator } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AppThemeProvider } from './src/AppTheme';
+import { tokenStore } from './src/api/tokenStore';
+import { locationService } from './src/services/locationService';
+import { Colors } from './src/theme';
 
-import OnboardingScreen  from './screens/OnboardingScreen';
-import PhoneAuthScreen   from './screens/PhoneAuthScreen';
-import NameEntryScreen   from './screens/NameEntryScreen';
-import ChooseRoleScreen  from './screens/ChooseRoleScreen';
-import RecordReelScreen  from './screens/RecordReelScreen';
-import ExploreScreen     from './screens/ExploreScreen';
-import ProfileScreen     from './screens/ProfileScreen';
+import OnboardingScreen from './screens/OnboardingScreen';
+import PhoneAuthScreen from './screens/PhoneAuthScreen';
+import NameEntryScreen from './screens/NameEntryScreen';
+import ChooseRoleScreen from './screens/ChooseRoleScreen';
+import RecordReelScreen from './screens/RecordReelScreen';
+import ExploreScreen from './screens/ExploreScreen';
+import ProfileScreen from './screens/ProfileScreen';
 
-// Routing mirrors iOS GrayManApp.swift flat state machine.
-//
-// onboarding → nameEntry → chooseRole
-//                              ├── recordReel → profile
-//                              └── explore ⇄ workerProfile
-//                                     └── profile
-//
-// Phone auth exists but routing currently bypasses it (same as iOS).
-
+/**
+ * Routing mirrors iOS GrayManApp.swift flat state machine.
+ */
 export default function App() {
   return (
     <GestureHandlerRootView style={styles.root}>
@@ -34,42 +31,85 @@ export default function App() {
 }
 
 function AppNavigator() {
-  const [screen, setScreen]                 = useState('onboarding');
-  const [userName, setUserName]             = useState('');
+  const [booting, setBooting] = useState(true);
+  const [screen, setScreen] = useState('onboarding');
+  const [userName, setUserName] = useState('');
   const [selectedWorker, setSelectedWorker] = useState(null);
   const [previousScreen, setPreviousScreen] = useState('chooseRole');
+  const [reelOrigin, setReelOrigin] = useState('chooseRole');
+  const [isNewWorker, setIsNewWorker] = useState(true);
 
-  const goExplore = (from) => {
+  useEffect(() => {
+    (async () => {
+      await tokenStore.load();
+      await locationService.requestPermission();
+      if (tokenStore.token) {
+        setScreen('profile');
+      }
+      setBooting(false);
+    })();
+  }, []);
+
+  const goExplore = useCallback(from => {
     setPreviousScreen(from);
     setScreen('explore');
-  };
+  }, []);
+
+  const handleSignOut = useCallback(async () => {
+    await tokenStore.clear();
+    setUserName('');
+    setSelectedWorker(null);
+    setPreviousScreen('chooseRole');
+    setScreen('onboarding');
+  }, []);
+
+  if (booting) {
+    return (
+      <View style={styles.boot}>
+        <ActivityIndicator size="large" color={Colors.shadowGrey} />
+      </View>
+    );
+  }
 
   switch (screen) {
     case 'onboarding':
-      return <OnboardingScreen goNext={() => setScreen('nameEntry')} />;
+      return (
+        <OnboardingScreen
+          goNext={() => setScreen('phoneAuth')}
+        />
+      );
 
     case 'phoneAuth':
       return (
         <PhoneAuthScreen
           goBack={() => setScreen('onboarding')}
-          goNext={() => setScreen('nameEntry')}
+          goNext={({ isNew }) => {
+            setIsNewWorker(isNew);
+            setScreen(isNew ? 'nameEntry' : 'profile');
+          }}
         />
       );
 
     case 'nameEntry':
       return (
         <NameEntryScreen
-          goBack={() => setScreen('onboarding')}
-          goNext={(name) => { setUserName(name); setScreen('chooseRole'); }}
+          goBack={() => setScreen('phoneAuth')}
+          goNext={name => {
+            setUserName(name);
+            setScreen('chooseRole');
+          }}
         />
       );
 
     case 'chooseRole':
       return (
         <ChooseRoleScreen
-          name={userName.split(' ')[0] || userName}
+          name={(userName.split(' ')[0] || userName) || 'there'}
           goBack={() => setScreen('nameEntry')}
-          goProfessional={() => setScreen('recordReel')}
+          goProfessional={() => {
+            setReelOrigin('chooseRole');
+            setScreen('recordReel');
+          }}
           goExplore={() => goExplore('chooseRole')}
         />
       );
@@ -77,7 +117,7 @@ function AppNavigator() {
     case 'recordReel':
       return (
         <RecordReelScreen
-          goBack={() => setScreen('chooseRole')}
+          goBack={() => setScreen(reelOrigin)}
           goDone={() => setScreen('profile')}
         />
       );
@@ -86,7 +126,10 @@ function AppNavigator() {
       return (
         <ExploreScreen
           onBack={() => setScreen(previousScreen)}
-          onViewProfile={(worker) => { setSelectedWorker(worker); setScreen('workerProfile'); }}
+          onViewProfile={worker => {
+            setSelectedWorker(worker);
+            setScreen('workerProfile');
+          }}
           onGoProfile={() => setScreen('profile')}
         />
       );
@@ -102,8 +145,13 @@ function AppNavigator() {
     case 'profile':
       return (
         <ProfileScreen
-          userName={userName || 'Ramesh Kumar'}
+          userName={userName}
           onExplore={() => goExplore('profile')}
+          onSignOut={handleSignOut}
+          onRecordReel={() => {
+            setReelOrigin('profile');
+            setScreen('recordReel');
+          }}
         />
       );
 
@@ -112,4 +160,12 @@ function AppNavigator() {
   }
 }
 
-const styles = StyleSheet.create({ root: { flex: 1 } });
+const styles = StyleSheet.create({
+  root: { flex: 1 },
+  boot: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.canvas,
+  },
+});

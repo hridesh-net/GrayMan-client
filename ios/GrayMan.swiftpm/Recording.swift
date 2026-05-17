@@ -208,13 +208,27 @@ final class RecordReelViewModel {
     private(set) var elapsed: Int = 0
     private(set) var recordedURL: URL?
 
+    /// Final transcript captured on-device while the reel was recording.
+    /// Sent to the backend alongside the upload as a hint for the reel
+    /// agent's audio stage. May be empty if speech permission is denied
+    /// or the locale isn't supported.
+    private(set) var transcript: String = ""
+
     let maxSeconds: Int
     let service: RecordingService
+    let transcriber: ReelTranscriber
 
     private var timerTask: Task<Void, Never>?
 
-    init(service: RecordingService, maxSeconds: Int = 30) {
+    init(service: RecordingService,
+         transcriber: ReelTranscriber? = nil,
+         maxSeconds: Int = 30) {
         self.service = service
+        // Default-construct on the main actor (`ReelTranscriber.init` is
+        // main-actor-isolated; default argument expressions are evaluated
+        // in a nonisolated context, so we can't put `ReelTranscriber()`
+        // directly in the parameter list).
+        self.transcriber = transcriber ?? ReelTranscriber()
         self.maxSeconds = maxSeconds
     }
 
@@ -224,6 +238,11 @@ final class RecordReelViewModel {
     func onAppear() async {
         permission = await service.requestPermissions()
         await service.startSession()
+        // Surface the speech-recognition permission prompt up-front so it
+        // doesn't intercept the user's tap on the Start Recording button
+        // later. Result is intentionally discarded — denial just means an
+        // empty transcript, recording itself still works.
+        _ = await ReelTranscriber.requestAuthorization()
     }
 
     func onDisappear() async {
@@ -232,14 +251,27 @@ final class RecordReelViewModel {
         await service.stopSession()
     }
 
-    func startRecording() async {
+    func startRecording(lang: AppLanguage = .english) async {
         guard phase == .idle else { return }
         do {
+            // Attach the transcriber's audio output BEFORE starting movie
+            // recording. Adding an output to the session after
+            // AVCaptureMovieFileOutput is already writing cancels the
+            // in-flight recording (the writer finalises early and
+            // `output.isRecording` flips back to false) — the user then
+            // sees "not currently recording" when they tap Stop. A
+            // transcriber failure must never block recording, so this is
+            // fire-and-forget and silent on permission denial.
+            await transcriber.start(session: service.session, lang: lang)
             try await service.startRecording()
             elapsed = 0
+            transcript = ""
             phase = .recording
             startTimer()
         } catch {
+            // Flush the transcriber so the audio output / recognition
+            // task aren't leaked on a startRecording failure.
+            _ = await transcriber.stop()
             phase = .failed(error.localizedDescription)
         }
     }
@@ -250,8 +282,12 @@ final class RecordReelViewModel {
         guard phase == .recording else { return }
         do {
             recordedURL = try await service.stopRecording()
+            transcript = await transcriber.stop()
             phase = .done
         } catch {
+            // Even on capture error, flush the transcriber so we don't
+            // leak the audio output / recognition task.
+            _ = await transcriber.stop()
             phase = .failed(error.localizedDescription)
         }
     }
@@ -260,6 +296,7 @@ final class RecordReelViewModel {
         timerTask?.cancel()
         timerTask = nil
         elapsed = 0
+        transcript = ""
         recordedURL = nil
         phase = .idle
     }

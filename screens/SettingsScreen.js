@@ -27,7 +27,7 @@ function RowDivider() {
   return <View style={styles.divider} />;
 }
 
-export default function SettingsScreen({ onClose }) {
+export default function SettingsScreen({ onClose, onSignOut }) {
   const { accent, language, setLanguage, t } = useTheme();
 
   return (
@@ -142,6 +142,15 @@ export default function SettingsScreen({ onClose }) {
             <Text style={styles.aboutArrow}>→</Text>
           </TouchableOpacity>
         </Card>
+
+        {onSignOut ? (
+          <PressScale
+            onPress={() => { onClose?.(); onSignOut(); }}
+            style={[styles.signOutBtn, { borderColor: '#DC2626' }]}
+          >
+            <Text style={styles.signOutText}>{t('Sign out', 'साइन आउट')}</Text>
+          </PressScale>
+        ) : null}
 
         <View style={{ height: 20 }} />
       </ScrollView>
@@ -265,4 +274,12 @@ const styles = StyleSheet.create({
   },
   aboutLinkText: { fontSize: 15, fontWeight: '500', color: Colors.shadowGrey },
   aboutArrow: { fontSize: 15, color: Colors.dimText, fontWeight: '500' },
+  signOutBtn: {
+    marginTop: 24,
+    paddingVertical: 16,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    alignItems: 'center',
+  },
+  signOutText: { fontSize: 16, fontWeight: '700', color: '#DC2626' },
 });

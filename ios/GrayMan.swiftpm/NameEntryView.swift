@@ -115,5 +115,11 @@ struct NameEntryView: View {
             .animation(.easeInOut(duration: 0.2), value: isValid)
         }
         .onAppear { focused = true }
+        .voiceGuide(
+            en: "Please tell us your name. We'll show this on your work profile " +
+                "so clients know who they are hiring. Type your name and tap Continue.",
+            hi: "कृपया अपना नाम लिखिए। यह आपकी वर्क प्रोफ़ाइल पर दिखेगा ताकि " +
+                "ग्राहक जान सकें कि वे किसे हायर कर रहे हैं। नाम लिखकर Continue दबाइए।"
+        )
     }
 }

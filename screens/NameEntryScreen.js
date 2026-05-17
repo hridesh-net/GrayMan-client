@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { ActivityIndicator } from 'react-native';
 import {
   View,
   Text,
@@ -13,11 +14,28 @@ import { StatusBar } from 'expo-status-bar';
 import { useTheme } from '../src/AppTheme';
 import Blobs from '../src/components/Blobs';
 import PressScale from '../src/components/PressScale';
+import { workerService } from '../src/api/workerService';
 import { Colors, Shadow } from '../src/theme';
 
 export default function NameEntryScreen({ goBack, goNext }) {
   const { accent, t } = useTheme();
   const [name, setName] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const submit = async () => {
+    if (!isValid || loading) return;
+    setLoading(true);
+    setError(null);
+    try {
+      await workerService.updateSelf({ name: trimmed });
+      goNext(trimmed);
+    } catch (e) {
+      setError(e.message || 'Could not save name');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const trimmed = name.trim();
   const isValid = trimmed.length > 1;
@@ -64,8 +82,9 @@ export default function NameEntryScreen({ goBack, goNext }) {
             autoFocus
             autoCapitalize="words"
             returnKeyType="done"
-            onSubmitEditing={() => isValid && goNext(trimmed)}
+            onSubmitEditing={submit}
           />
+          {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
           {/* Feedback */}
           {isValid && (
@@ -78,12 +97,12 @@ export default function NameEntryScreen({ goBack, goNext }) {
         {/* Bottom CTA */}
         <View style={styles.bottomSection}>
           <PressScale
-            onPress={() => isValid && goNext(trimmed)}
-            disabled={!isValid}
+            onPress={submit}
+            disabled={!isValid || loading}
             style={[
               styles.continueBtn,
               { backgroundColor: accent, shadowColor: accent },
-              !isValid && styles.continueBtnDisabled,
+              (!isValid || loading) && styles.continueBtnDisabled,
             ]}
           >
             <Text style={styles.continueBtnText}>
