@@ -15,6 +15,15 @@ struct WorkerDTO: Decodable, Hashable, Sendable {
     let lng: Double?
     let avatarURL: String?
     let reelURL: String?
+    /// HLS master playlist URL produced by the backend transcoder. Prefer
+    /// this for playback — the cellular bitrate cap on AVPlayer picks the
+    /// 240/480p rung over 720p so Tier-3 networks stay under the 3-second
+    /// buffer ceiling.
+    let reelHLSURL: String?
+    /// First-frame JPEG; rendered blurred behind the player while the HLS
+    /// stream warms up so the user never sees an opaque black square.
+    let reelThumbnailURL: String?
+    let reelDurationSeconds: Double?
     let vouchScore: Int
     let isActive: Bool
     // Reel analysis state (only meaningful for self profile, but present on
@@ -35,6 +44,9 @@ struct WorkerDTO: Decodable, Hashable, Sendable {
         case city, lat, lng
         case avatarURL = "avatar_url"
         case reelURL = "reel_url"
+        case reelHLSURL = "reel_hls_url"
+        case reelThumbnailURL = "reel_thumbnail_url"
+        case reelDurationSeconds = "reel_duration_seconds"
         case vouchScore = "vouch_score"
         case isActive = "is_active"
         case analysisStatus = "analysis_status"
@@ -278,6 +290,11 @@ struct WorkHistoryDTO: Decodable, Hashable, Sendable, Identifiable {
     let role: String
     let client: String?
     let periodLabel: String
+    /// Machine-readable start / end dates as `YYYY-MM-DD` strings.
+    /// Day component is always `01` — the editor sheet captures month
+    /// + year only. End date is nil when the role is ongoing.
+    let startDate: String?
+    let endDate: String?
     let description: String?
     let position: Int
 
@@ -286,6 +303,8 @@ struct WorkHistoryDTO: Decodable, Hashable, Sendable, Identifiable {
         case workerID = "worker_id"
         case role, client
         case periodLabel = "period_label"
+        case startDate = "start_date"
+        case endDate = "end_date"
         case description, position
     }
 }
@@ -294,11 +313,16 @@ struct WorkHistoryCreateRequest: Encodable {
     let role: String
     let client: String?
     let periodLabel: String
+    /// `YYYY-MM-DD` (day always `01`). `endDate` is nil for ongoing roles.
+    let startDate: String?
+    let endDate: String?
     let description: String?
     var position: Int = 0
     enum CodingKeys: String, CodingKey {
         case role, client
         case periodLabel = "period_label"
+        case startDate = "start_date"
+        case endDate = "end_date"
         case description, position
     }
 }
@@ -508,9 +532,14 @@ struct ReelAnalysisProposalDTO: Decodable, Hashable, Sendable {
     let bio: String?
     let verification: ReelVerificationDTO?
     let skillEvidence: [SkillEvidenceDTO]
+    /// What the AI actually heard from the audio. When the proposed
+    /// trade/skills look wrong, this is the explanation — STT either
+    /// misheard or the user said something off-topic. Always rendered
+    /// on the proposal sheet so the user can verify the ground truth.
+    let transcript: String?
 
     enum CodingKeys: String, CodingKey {
-        case trade, years, skills, bio, verification
+        case trade, years, skills, bio, verification, transcript
         case skillEvidence = "skill_evidence"
     }
 
@@ -522,6 +551,7 @@ struct ReelAnalysisProposalDTO: Decodable, Hashable, Sendable {
         self.bio = try c.decodeIfPresent(String.self, forKey: .bio)
         self.verification = try c.decodeIfPresent(ReelVerificationDTO.self, forKey: .verification)
         self.skillEvidence = (try? c.decode([SkillEvidenceDTO].self, forKey: .skillEvidence)) ?? []
+        self.transcript = try c.decodeIfPresent(String.self, forKey: .transcript)
     }
 }
 
@@ -731,6 +761,12 @@ extension Worker {
             return String(format: "%.1f", min(5.0, r))
         }()
 
+        // Prefer HLS for playback when the transcoder has produced one.
+        // The raw .mov upload (`reelURL`) is the fallback so reels show
+        // up the instant the user finishes uploading, before transcode
+        // completes — keeps the discovery feed from going stale.
+        let playbackURL = dto.reelHLSURL ?? dto.reelURL
+
         self.init(
             id: dto.id,
             initials: initials,
@@ -750,7 +786,10 @@ extension Worker {
             gradientStartHex: style.startHex,
             gradientEndHex: style.endHex,
             isVerified: dto.isVerified ?? false,
-            avatarURL: dto.avatarURL
+            avatarURL: dto.avatarURL,
+            reelPlaybackURL: playbackURL,
+            reelThumbnailURL: dto.reelThumbnailURL,
+            reelDurationSeconds: dto.reelDurationSeconds
         )
     }
 }

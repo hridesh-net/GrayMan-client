@@ -122,13 +122,17 @@ struct GrayManApp: App {
             )
 
         case .explore:
-            ExploreView(
+            ReelFeedView(
                 onBack: { screen = previousScreen },
                 onViewProfile: { worker in
                     selectedWorker = worker
                     screen = .workerProfile
                 },
-                onGoProfile: { screen = .profile }
+                onGoProfile: { screen = .profile },
+                onGoHome: { screen = .home },
+                // Settings lives inside ProfileView — route through
+                // Profile so the user lands somewhere meaningful.
+                onGoSettings: { screen = .profile }
             )
 
         case .workerProfile:

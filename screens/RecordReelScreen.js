@@ -47,7 +47,7 @@ export default function RecordReelScreen({ goBack, goDone }) {
   const [uploadError, setUploadError] = useState(null);
 
   const cameraRef = useRef(null);
-  const recordPromiseRef = useRef(null);
+  const recordingPromiseRef = useRef(null);
   const timerRef = useRef(null);
   const progressAnim = useRef(new Animated.Value(0)).current;
 

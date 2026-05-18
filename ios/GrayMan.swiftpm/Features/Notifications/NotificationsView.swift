@@ -249,6 +249,9 @@ private struct ReelAnalysisReviewSheet: View {
                         header
                         if let p = proposal {
                             tradeRow(p)
+                            if let t = p.transcript, !t.isEmpty {
+                                transcriptBlock(t)
+                            }
                             skillsBlock(p)
                             evidenceBlock(p)
                             verificationBlock(p)
@@ -291,19 +294,15 @@ private struct ReelAnalysisReviewSheet: View {
 
     private func tradeRow(_ p: ReelAnalysisProposalDTO) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            sectionTitle(theme.t("Trade & experience", "ट्रेड और अनुभव"))
-            HStack {
-                Text(p.trade ?? "—")
-                    .scaledFont(size: 16, weight: .heavy, relativeTo: .headline)
-                Spacer()
-                if let y = p.years, y > 0 {
-                    Text("\(y) yrs")
-                        .scaledFont(size: 13, weight: .semibold, relativeTo: .footnote)
-                        .foregroundStyle(Color.mutedText)
-                }
-            }
-            .padding(12)
-            .background(RoundedRectangle(cornerRadius: 12).fill(Color.soft))
+            // Years of experience deliberately NOT shown here — that
+            // number is derived from user-entered work history, not
+            // the reel. The AI proposes a trade only.
+            sectionTitle(theme.t("Trade", "ट्रेड"))
+            Text(p.trade ?? "—")
+                .scaledFont(size: 16, weight: .heavy, relativeTo: .headline)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12)
+                .background(RoundedRectangle(cornerRadius: 12).fill(Color.soft))
         }
     }
 
@@ -410,6 +409,30 @@ private struct ReelAnalysisReviewSheet: View {
                 .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(RoundedRectangle(cornerRadius: 12).fill(Color.soft))
+        }
+    }
+
+    /// Audio ground-truth — exactly what the AI's STT heard from the
+    /// reel. Surfacing this lets the user diagnose when proposed
+    /// skills look wrong: usually the transcript doesn't match what
+    /// they actually said and the bug is at the STT layer (not
+    /// hallucination further down the pipeline).
+    private func transcriptBlock(_ transcript: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            sectionTitle(theme.t("What we heard", "हमने क्या सुना"))
+            Text("\u{201C}\(transcript)\u{201D}")
+                .scaledFont(size: 13, relativeTo: .footnote)
+                .foregroundStyle(Color.shadowGrey)
+                .italic()
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: 12).fill(Color.soft))
+            Text(theme.t(
+                "If this doesn't match what you said, re-record so we hear you clearly.",
+                "अगर यह आपकी बात से मेल नहीं खाता, तो फिर से रिकॉर्ड करें।"
+            ))
+            .scaledFont(size: 11, relativeTo: .caption2)
+            .foregroundStyle(Color.mutedText)
         }
     }
 
