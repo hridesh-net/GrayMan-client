@@ -14,6 +14,7 @@ import * as Speech from 'expo-speech';
 import { LinearGradient } from 'expo-linear-gradient';
 
 import { useTheme } from '../src/AppTheme';
+import { tpl } from '../src/i18n';
 import PressScale from '../src/components/PressScale';
 import { InterviewSession } from '../src/services/interviewSession';
 import { tokenStore } from '../src/api/tokenStore';
@@ -106,7 +107,7 @@ export default function VoiceInterviewScreen({ trade, onClose, durationMinutes =
           <View style={{ width: 36 }} />
         </View>
         <Text style={styles.langHint}>
-          {t(`~${durationMinutes} min · pick your language`, `~${durationMinutes} मिनट · भाषा चुनें`)}
+          {`~${durationMinutes} ${tpl(t, 'min · pick your language', 'मिनट · भाषा चुनें')}`}
         </Text>
         <ScrollView contentContainerStyle={styles.langList}>
           {INTERVIEW_LANGS.map(l => (

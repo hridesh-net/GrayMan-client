@@ -10,6 +10,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 
 import { useTheme } from '../src/AppTheme';
+import { tpl } from '../src/i18n';
 import Blobs from '../src/components/Blobs';
 import PressScale from '../src/components/PressScale';
 import { workerService } from '../src/api/workerService';
@@ -118,7 +119,7 @@ export default function PhoneAuthScreen({ goBack, goNext }) {
           </Text>
           <Text style={styles.subtitle}>
             {stage === 'otp'
-              ? t(`Code sent to +91 ${phone}`, `+91 ${phone} पर कोड भेजा गया`)
+              ? tpl(t, 'Code sent to {phone}', '+91 {phone} पर कोड भेजा गया', { phone: `+91 ${phone}` })
               : t("We'll send a verification code", 'हम एक सत्यापन कोड भेजेंगे')}
           </Text>
         </View>

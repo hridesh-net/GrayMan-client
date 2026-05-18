@@ -83,6 +83,25 @@ export async function requestVoid(method, path, opts = {}) {
   await request(method, path, opts);
 }
 
+/** Human-readable message from APIError (FastAPI detail JSON or plain text). */
+export function apiErrorMessage(err) {
+  if (!(err instanceof APIError)) return err?.message || 'Network error';
+  if (err.body) {
+    try {
+      const data = JSON.parse(err.body);
+      const { detail } = data;
+      if (typeof detail === 'string') return detail;
+      if (Array.isArray(detail)) {
+        return detail.map(d => (typeof d === 'string' ? d : d.msg || JSON.stringify(d))).join(', ');
+      }
+    } catch {
+      /* plain-text body */
+    }
+    return err.body.slice(0, 400);
+  }
+  return err.message;
+}
+
 /** PUT bytes to S3 presigned URL */
 export async function uploadToS3(presignedUrl, data, contentType) {
   const res = await fetch(presignedUrl, {

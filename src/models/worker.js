@@ -1,4 +1,5 @@
 import { APIConfig } from '../api/config';
+import { tradeIconName } from '../components/AppIcon';
 
 const GRADIENTS = [
   '#ee6c4d', '#118AB2', '#C9184A', '#C1440E', '#7B2D8B',
@@ -8,23 +9,24 @@ const GRADIENTS = [
 /** Mirrors iOS WorkerDTO TradeStyle.forTrade — explore card visuals. */
 function tradeStyle(trade = '') {
   const lower = trade.toLowerCase();
-  if (lower.includes('electric')) return { emoji: '⚡', gradientStartHex: '#0c1829' };
-  if (lower.includes('plumb')) return { emoji: '🔧', gradientStartHex: '#081420' };
-  if (lower.includes('hvac') || lower.includes('ac ')) return { emoji: '❄️', gradientStartHex: '#061a0e' };
-  if (lower.includes('interior') || lower.includes('decorator')) return { emoji: '🎨', gradientStartHex: '#1e0f05' };
-  if (lower.includes('weld')) return { emoji: '🔥', gradientStartHex: '#1a0800' };
-  if (lower.includes('nurse')) return { emoji: '🏥', gradientStartHex: '#0e0718' };
-  if (lower.includes('carpenter')) return { emoji: '🪚', gradientStartHex: '#1a0f00' };
-  if (lower.includes('paint')) return { emoji: '🎨', gradientStartHex: '#0a0a1e' };
-  if (lower.includes('mason')) return { emoji: '🧱', gradientStartHex: '#1f1208' };
-  if (lower.includes('cook')) return { emoji: '🍳', gradientStartHex: '#1c0a00' };
-  if (lower.includes('driver')) return { emoji: '🚗', gradientStartHex: '#0a0a0a' };
-  if (lower.includes('guard') || lower.includes('security')) return { emoji: '🛡️', gradientStartHex: '#0a0a14' };
-  if (lower.includes('tailor')) return { emoji: '🧵', gradientStartHex: '#160a14' };
-  if (lower.includes('garden')) return { emoji: '🌿', gradientStartHex: '#0a1c0a' };
-  if (lower.includes('appliance') || lower.includes('repair')) return { emoji: '🔌', gradientStartHex: '#0a141a' };
-  if (lower.includes('mechanic')) return { emoji: '🔩', gradientStartHex: '#0a0a0a' };
-  return { emoji: '🛠️', gradientStartHex: '#161616' };
+  const icon = tradeIconName(trade);
+  if (lower.includes('electric')) return { icon, gradientStartHex: '#0c1829' };
+  if (lower.includes('plumb')) return { icon, gradientStartHex: '#081420' };
+  if (lower.includes('hvac') || lower.includes('ac ')) return { icon, gradientStartHex: '#061a0e' };
+  if (lower.includes('interior') || lower.includes('decorator')) return { icon, gradientStartHex: '#1e0f05' };
+  if (lower.includes('weld')) return { icon, gradientStartHex: '#1a0800' };
+  if (lower.includes('nurse')) return { icon, gradientStartHex: '#0e0718' };
+  if (lower.includes('carpenter')) return { icon, gradientStartHex: '#1a0f00' };
+  if (lower.includes('paint')) return { icon, gradientStartHex: '#0a0a1e' };
+  if (lower.includes('mason')) return { icon, gradientStartHex: '#1f1208' };
+  if (lower.includes('cook')) return { icon, gradientStartHex: '#1c0a00' };
+  if (lower.includes('driver')) return { icon, gradientStartHex: '#0a0a0a' };
+  if (lower.includes('guard') || lower.includes('security')) return { icon, gradientStartHex: '#0a0a14' };
+  if (lower.includes('tailor')) return { icon, gradientStartHex: '#160a14' };
+  if (lower.includes('garden')) return { icon, gradientStartHex: '#0a1c0a' };
+  if (lower.includes('appliance') || lower.includes('repair')) return { icon, gradientStartHex: '#0a141a' };
+  if (lower.includes('mechanic')) return { icon, gradientStartHex: '#0a0a0a' };
+  return { icon, gradientStartHex: '#161616' };
 }
 
 function hashId(id) {
@@ -84,7 +86,7 @@ export function workerFromDTO(dto, userLat, userLng) {
     vouched: vouch,
     tags: dto.skill_tags || [],
     verifiedTagIndices: new Set(dto.verified_tag_indices || []),
-    emoji: style.emoji,
+    tradeIcon: style.icon,
     gradientStartHex: style.gradientStartHex,
     gradientEndHex: GRADIENTS[hashId(dto.id) % GRADIENTS.length],
     initials: initials(dto.name),

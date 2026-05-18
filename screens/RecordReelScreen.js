@@ -18,6 +18,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 
 import { useTheme } from '../src/AppTheme';
+import { tpl } from '../src/i18n';
 import PressScale from '../src/components/PressScale';
 import { uploadReel } from '../src/services/reelUploader';
 import { Colors } from '../src/theme';
@@ -110,10 +111,10 @@ export default function RecordReelScreen({ goBack, goDone }) {
       const promise = cameraRef.current.recordAsync({
         maxDuration: MAX_DURATION,
       });
-      recordPromiseRef.current = promise;
+      recordingPromiseRef.current = promise;
 
       const video = await promise;
-      recordPromiseRef.current = null;
+      recordingPromiseRef.current = null;
       if (video?.uri) {
         setRecordingUri(video.uri);
         setPhase('done');
@@ -121,14 +122,14 @@ export default function RecordReelScreen({ goBack, goDone }) {
         throw new Error('No video URI');
       }
     } catch {
-      recordPromiseRef.current = null;
+      recordingPromiseRef.current = null;
       setUploadError(t('Failed to record reel', 'रील रिकॉर्ड करने में विफल'));
       setPhase('failed');
     }
   };
 
   const handleReRecord = () => {
-    recordPromiseRef.current = null;
+    recordingPromiseRef.current = null;
     setRecordingUri(null);
     setElapsed(0);
     progressAnim.setValue(0);
@@ -157,8 +158,8 @@ export default function RecordReelScreen({ goBack, goDone }) {
   const statusLabel = () => {
     switch (phase) {
       case 'idle': return t('Ready to record', 'रिकॉर्ड करने के लिए तैयार');
-      case 'recording': return t(`${elapsed}s recorded…`, `${elapsed}s रिकॉर्ड हो गया…`);
-      case 'done': return t(`${elapsed}s recorded`, `${elapsed}s रिकॉर्ड हो गया`);
+      case 'recording': return `${elapsed}s ${t('seconds recorded…', 'रिकॉर्ड हो रहा है…')}`;
+      case 'done': return `${elapsed}s ${t('seconds recorded', 'रिकॉर्ड हो गया')}`;
       case 'failed': return t('Tap to retry', 'पुनः प्रयास करें');
       default: return '';
     }
@@ -268,7 +269,7 @@ export default function RecordReelScreen({ goBack, goDone }) {
                 <Text style={styles.doneIcon}>✓</Text>
                 <Text style={styles.doneTitle}>{t('Reel recorded!', 'रील रिकॉर्ड हो गया!')}</Text>
                 <Text style={styles.doneSub}>
-                  {t(`${elapsed}s · ready to submit`, `${elapsed}s · सबमिट के लिए तैयार`)}
+                  {`${elapsed}s · ${t('ready to submit', 'सबमिट के लिए तैयार')}`}
                 </Text>
               </View>
             )}

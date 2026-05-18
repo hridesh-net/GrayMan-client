@@ -14,6 +14,7 @@ import Blobs from '../src/components/Blobs';
 import PressScale from '../src/components/PressScale';
 import { AppLanguages } from '../src/i18n';
 import { Colors, Spacing, Radius, Shadow } from '../src/theme';
+import AppIcon, { Icons } from '../src/components/AppIcon';
 
 function SectionLabel({ children }) {
   return <Text style={styles.sectionLabel}>{children}</Text>;
@@ -38,7 +39,7 @@ export default function SettingsScreen({ onClose, onSignOut }) {
       {/* Header */}
       <View style={styles.header}>
         <PressScale onPress={onClose} style={styles.closeBtn}>
-          <Text style={styles.closeBtnText}>✕</Text>
+          <AppIcon name={Icons.close} size={18} color={Colors.shadowGrey} />
         </PressScale>
         <Text style={styles.headerTitle}>{t('Settings', 'सेटिंग्स')}</Text>
         <View style={{ width: 36 }} />

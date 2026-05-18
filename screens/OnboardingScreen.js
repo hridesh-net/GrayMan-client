@@ -13,6 +13,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../src/AppTheme';
 import Blobs from '../src/components/Blobs';
 import PressScale from '../src/components/PressScale';
+import AppIcon, { Icons } from '../src/components/AppIcon';
 import { AppLanguages } from '../src/i18n';
 import { Colors, Spacing, Shadow } from '../src/theme';
 
@@ -35,22 +36,13 @@ export default function OnboardingScreen({ goNext }) {
           end={{ x: 1, y: 1 }}
           style={styles.logoBox}
         >
-          <Text style={styles.logoEmoji}>⚡</Text>
+          <AppIcon name={Icons.bolt} size={44} color="#fff" />
         </LinearGradient>
 
         <Text style={styles.appTitle}>sthapna.ai</Text>
 
         <Text style={styles.subtitle}>
-          {t(
-            'Digital identity for skilled workers',
-            'कुशल कामगारों की डिजिटल पहचान',
-            {
-              mr: 'कुशल कामगारांची डिजिटल ओळख',
-              te: 'నైపుణ్య కార్మికుల డిజిటల్ గుర్తింపు',
-              ta: 'திறன் தொழிலாளர்களின் டிஜிட்டல் அடையாளம்',
-              kn: 'ಕೌಶಲ್ಯ ಕಾರ್ಮಿಕರ ಡಿಜಿಟಲ್ ಗುರುತು',
-            },
-          )}
+          {t('Digital identity for skilled workers', 'कुशल कामगारों की डिजिटल पहचान')}
         </Text>
 
         <Text style={[styles.devanagariTag, { color: accent }]}>काम · सेतु</Text>

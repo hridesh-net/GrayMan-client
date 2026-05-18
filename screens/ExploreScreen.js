@@ -23,6 +23,8 @@ import { AllCategories } from '../src/workers';
 import { workerService } from '../src/api/workerService';
 import { Colors } from '../src/theme';
 import ExploreReelPlayer, { explorePlaybackSource } from '../src/components/ExploreReelPlayer';
+import AppIcon, { Icons, TradeIcon } from '../src/components/AppIcon';
+import { tpl } from '../src/i18n';
 
 const { width: SW } = Dimensions.get('window');
 
@@ -43,7 +45,7 @@ function ActionBtn({ icon, label, tint = '#fff', onPress }) {
   return (
     <PressScale onPress={onPress} scale={0.90} style={s.actionTile}>
       <View style={s.actionCircle}>
-        <Text style={[s.actionIcon, { color: tint }]}>{icon}</Text>
+        <AppIcon name={icon} size={22} color={tint} />
       </View>
       {!!label && <Text style={s.actionLabel}>{label}</Text>}
     </PressScale>
@@ -53,7 +55,11 @@ function ActionBtn({ icon, label, tint = '#fff', onPress }) {
 function TabTile({ icon, label, active, accent, onPress }) {
   return (
     <Pressable onPress={onPress} style={s.tabTile}>
-      <Text style={[s.tabTileIcon, active && { color: accent }]}>{icon}</Text>
+      <AppIcon
+        name={icon}
+        size={22}
+        color={active ? accent : 'rgba(39,41,50,0.45)'}
+      />
       <Text style={[s.tabTileLabel, active && { color: accent }]}>{label}</Text>
     </Pressable>
   );
@@ -255,7 +261,7 @@ export default function ExploreScreen({ onBack, onViewProfile, onGoProfile }) {
                 <Text style={s.radiusBtnText}>−</Text>
               </Pressable>
               <View style={s.radiusCenter}>
-                <Text style={s.radiusIcon}>📍</Text>
+                <AppIcon name={Icons.location} size={14} color="#fff" />
                 <Text style={s.radiusText}>{radius} km</Text>
               </View>
               <Pressable onPress={increaseRadius} style={s.radiusBtn} hitSlop={8}>
@@ -314,8 +320,10 @@ export default function ExploreScreen({ onBack, onViewProfile, onGoProfile }) {
           </View>
         ) : !worker ? (
           <View style={s.centerBox}>
-            <Text style={s.emptyIcon}>🔍</Text>
-            <Text style={s.emptyTitle}>{t(`No workers in ${radius} km`, `${radius} km में कोई कामगार नहीं`)}</Text>
+            <AppIcon name={Icons.search} size={48} color="rgba(255,255,255,0.5)" style={{ marginBottom: 12 }} />
+            <Text style={s.emptyTitle}>
+              {tpl(t, 'No workers within {radius} km', '{radius} km में कोई कामगार नहीं', { radius })}
+            </Text>
             <Text style={s.emptySubtitle}>{t('Try increasing the radius above', 'ऊपर से दूरी बढ़ाएं')}</Text>
           </View>
         ) : (
@@ -325,11 +333,11 @@ export default function ExploreScreen({ onBack, onViewProfile, onGoProfile }) {
             <View style={s.avatarBlock}>
               {!hasReelVideo && (
                 <View style={s.avatarCircle}>
-                  <Text style={s.avatarEmoji}>{worker.emoji}</Text>
+                  <TradeIcon trade={worker.trade} size={52} color="#fff" />
                 </View>
               )}
               <View style={s.vouchBadge}>
-                <Text style={s.vouchStar}>★</Text>
+                <AppIcon name={Icons.starFill} size={12} color="#F4A261" />
                 <Text style={s.vouchText}>{worker.vouchScore ?? 0} Vouched</Text>
               </View>
             </View>
@@ -355,7 +363,7 @@ export default function ExploreScreen({ onBack, onViewProfile, onGoProfile }) {
 
                 {/* Location */}
                 <View style={s.locationRow}>
-                  <Text style={s.locationIcon}>📍</Text>
+                  <AppIcon name={Icons.location} size={13} color="rgba(255,255,255,0.85)" />
                   <Text style={s.locationText}>{worker.location}</Text>
                 </View>
 
@@ -370,11 +378,14 @@ export default function ExploreScreen({ onBack, onViewProfile, onGoProfile }) {
 
                 {/* Stats inline */}
                 <View style={s.statsRow}>
-                  <Text style={s.statVal}>{worker.rating}★</Text>
-                  <Text style={s.statLbl}> Rating</Text>
+                  <View style={s.statRatingRow}>
+                    <Text style={s.statVal}>{worker.rating}</Text>
+                    <AppIcon name={Icons.starFill} size={14} color="#F4A261" />
+                  </View>
+                  <Text style={s.statLbl}> {t('Rating', 'रेटिंग')}</Text>
                   <View style={{ width: 12 }} />
                   <Text style={s.statVal}>{worker.jobs}</Text>
-                  <Text style={s.statLbl}> Jobs</Text>
+                  <Text style={s.statLbl}> {t('Jobs', 'काम')}</Text>
                 </View>
 
                 {/* View Profile button — matches iOS accent rounded rect */}
@@ -389,7 +400,7 @@ export default function ExploreScreen({ onBack, onViewProfile, onGoProfile }) {
               {/* Right: action column */}
               <View style={s.actionColumn}>
                 <ActionBtn
-                  icon={liked ? '♥' : '♡'}
+                  icon={liked ? Icons.heartFill : Icons.heart}
                   label={String(snap?.counts?.likes ?? 0)}
                   tint={liked ? '#E63946' : '#fff'}
                   onPress={async () => {
@@ -397,10 +408,10 @@ export default function ExploreScreen({ onBack, onViewProfile, onGoProfile }) {
                     setActionStates(p => ({ ...p, [worker.id]: { ...p[worker.id], has_liked: !liked } }));
                   }}
                 />
-                <ActionBtn icon="💬" label={String(snap?.counts?.messages ?? 0)} />
-                <ActionBtn icon="↗" />
+                <ActionBtn icon={Icons.chat} label={String(snap?.counts?.messages ?? 0)} />
+                <ActionBtn icon={Icons.share} />
                 <ActionBtn
-                  icon={saved ? '🔖' : '📑'}
+                  icon={saved ? Icons.bookmarkFill : Icons.bookmark}
                   tint={saved ? '#F4A261' : '#fff'}
                   onPress={async () => {
                     saved ? await workerService.unsave(worker.id) : await workerService.save(worker.id);
@@ -408,9 +419,9 @@ export default function ExploreScreen({ onBack, onViewProfile, onGoProfile }) {
                   }}
                 />
                 <ActionBtn
-                  icon={vouched ? '✦' : '★'}
-                  label={t(vouched ? 'Vouched' : 'Vouch', vouched ? 'Vouch किया' : 'Vouch')}
-                  tint={vouched ? '#3B82F6' : '#fff'}
+                  icon={vouched ? Icons.vouchFill : Icons.vouch}
+                  label={vouched ? t('Vouched', 'वाउच किया') : t('Vouch', 'Vouch करें')}
+                  tint={vouched ? '#2D6A4F' : '#fff'}
                 />
               </View>
             </View>
@@ -435,18 +446,18 @@ export default function ExploreScreen({ onBack, onViewProfile, onGoProfile }) {
         {trayOpen ? (
           /* Expanded tab bar */
           <View style={s.expandedInner}>
-            <TabTile icon="🏠" label={t('Home', 'होम')} onPress={onGoProfile} />
-            <TabTile icon="🔍" label={t('Explore', 'एक्सप्लोर')} active accent={accent} onPress={() => setTrayOpen(false)} />
+            <TabTile icon={Icons.home} label={t('Home', 'होम')} onPress={onGoProfile} />
+            <TabTile icon={Icons.explore} label={t('Explore', 'एक्सप्लोर')} active accent={accent} onPress={() => setTrayOpen(false)} />
             <PressScale onPress={() => setTrayOpen(false)} style={[s.navPlusBtn, { backgroundColor: accent }]}>
-              <Text style={s.navPlusTxt}>+</Text>
+              <AppIcon name={Icons.search} size={22} color="#fff" />
             </PressScale>
-            <TabTile icon="👤" label={t('Profile', 'प्रोफ़ाइल')} onPress={onGoProfile} />
-            <TabTile icon="💬" label={t('Messages', 'संदेश')} onPress={() => setTrayOpen(false)} />
+            <TabTile icon={Icons.profile} label={t('Profile', 'प्रोफ़ाइल')} onPress={onGoProfile} />
+            <TabTile icon={Icons.settings} label={t('Settings', 'सेटिंग्स')} onPress={() => setTrayOpen(false)} />
           </View>
         ) : (
           /* Collapsed hamburger circle */
           <Pressable onPress={() => setTrayOpen(true)} style={s.collapsedBtn}>
-            <Text style={s.collapsedIcon}>☰</Text>
+            <AppIcon name={Icons.menu} size={24} color="#fff" />
           </Pressable>
         )}
       </Animated.View>
@@ -558,11 +569,17 @@ const s = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   avatarEmoji: { fontSize: 54 },
+  statRatingRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   vouchBadge: {
-    flexDirection: 'row', alignItems: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     backgroundColor: 'rgba(255,255,255,0.12)',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.20)',
-    borderRadius: 20, paddingHorizontal: 14, paddingVertical: 4, gap: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.20)',
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 4,
   },
   vouchStar: { color: '#fff', fontSize: 11 },
   vouchText: { color: 'rgba(255,255,255,0.90)', fontSize: 12, fontWeight: '800' },

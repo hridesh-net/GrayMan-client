@@ -141,6 +141,11 @@ export const workerService = {
   createShowcaseItem(body) {
     return request('POST', '/workers/me/showcase', { body });
   },
+  requestShowcaseUploadURL(kind, contentType) {
+    return request('POST', '/showcase/upload-url', {
+      body: { kind, content_type: contentType },
+    });
+  },
   initShowcaseMultipart(kind, contentType, partCount) {
     return request('POST', '/showcase/upload/init', {
       body: { kind, content_type: contentType, part_count: partCount },
@@ -150,6 +155,34 @@ export const workerService = {
     return requestVoid('POST', '/showcase/upload/complete', {
       body: { key, upload_id: uploadId, parts },
     });
+  },
+
+  /** Start async time-lapse compile (202). */
+  buildTimelapse({ title, photoItemIds = [], frameDurationSeconds = 0.5 }) {
+    return request('POST', '/workers/me/showcase/timelapse/build', {
+      body: {
+        title,
+        photo_item_ids: photoItemIds,
+        frame_duration_seconds: frameDurationSeconds,
+      },
+    });
+  },
+
+  getTimelapseJob(jobId) {
+    return request('GET', `/workers/me/showcase/timelapse/${jobId}`);
+  },
+
+  /** Poll until completed or failed (1.5s interval). */
+  async pollTimelapseJob(jobId, { intervalMs = 1500, onStatus } = {}) {
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    for (;;) {
+      const status = await workerService.getTimelapseJob(jobId);
+      onStatus?.(status);
+      if (status.status === 'completed' || status.status === 'failed') {
+        return status;
+      }
+      await sleep(intervalMs);
+    }
   },
 
   // Voice guide
