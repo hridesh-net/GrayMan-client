@@ -16,11 +16,33 @@ import PressScale from '../src/components/PressScale';
 import VouchScoreRing from '../src/components/VouchScoreRing';
 import { workerService } from '../src/api/workerService';
 import { Colors, Spacing, Radius, Shadow } from '../src/theme';
+import AppIcon, { Icons } from '../src/components/AppIcon';
 
 const RELATIONSHIPS = [
-  { en: 'We worked together', hi: 'हमने साथ काम किया' },
-  { en: 'They worked for me', hi: 'उन्होंने मेरे लिए काम किया' },
-  { en: 'I was their client', hi: 'मैं उनका क्लाइंट था' },
+  {
+    en: 'We worked together',
+    hi: 'हमने साथ काम किया',
+    mr: 'आम्ही एकत्र काम केले',
+    te: 'మేము కలిసి పని చేశాం',
+    ta: 'நாங்கள் ஒன்றாக வேலை செய்தோம்',
+    kn: 'ನಾವು ಒಟ್ಟಿಗೆ ಕೆಲಸ ಮಾಡಿದೆವು',
+  },
+  {
+    en: 'They worked for me',
+    hi: 'उन्होंने मेरे लिए काम किया',
+    mr: 'त्यांनी माझ्यासाठी काम केले',
+    te: 'వారు నా కోసం పని చేశారు',
+    ta: 'அவர்கள் எனக்காக வேலை செய்தார்கள்',
+    kn: 'ಅವರು ನನ್ನಿಗಾಗಿ ಕೆಲಸ ಮಾಡಿದರು',
+  },
+  {
+    en: 'I was their client',
+    hi: 'मैं उनका क्लाइंट था',
+    mr: 'मी त्यांचा क्लायंट होतो',
+    te: 'నేను వారి క్లయింట్',
+    ta: 'நான் அவர்களின் வாடிக்கையாளர்',
+    kn: 'ನಾನು ಅವರ ಕ್ಲೈಂಟ್',
+  },
 ];
 
 export default function GiveVouchSheet({ worker, onClose }) {
@@ -57,7 +79,7 @@ export default function GiveVouchSheet({ worker, onClose }) {
         <View style={styles.successContent}>
           {/* Checkmark circle */}
           <View style={[styles.checkCircle, { backgroundColor: accent }]}>
-            <Text style={styles.checkIcon}>✓</Text>
+            <AppIcon name={Icons.checkmark} size={36} color="#fff" />
           </View>
           <Text style={styles.successTitle}>{t('Vouch Sent!', 'वाउच भेज दिया!')}</Text>
           <Text style={styles.successBody}>
@@ -117,7 +139,7 @@ export default function GiveVouchSheet({ worker, onClose }) {
                 activeOpacity={0.75}
               >
                 <Text style={[styles.chipText, { color: selected ? '#fff' : Colors.shadowGrey }]}>
-                  {t(rel.en, rel.hi)}
+                  {t(rel.en, rel.hi, rel)}
                 </Text>
               </TouchableOpacity>
             );
@@ -134,9 +156,11 @@ export default function GiveVouchSheet({ worker, onClose }) {
               activeOpacity={0.75}
               style={styles.starBtn}
             >
-              <Text style={[styles.star, { color: star <= starRating ? accent : Colors.dimText }]}>
-                ★
-              </Text>
+              <AppIcon
+                name={star <= starRating ? Icons.starFill : Icons.star}
+                size={32}
+                color={star <= starRating ? accent : Colors.dimText}
+              />
             </TouchableOpacity>
           ))}
         </View>

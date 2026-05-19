@@ -23,6 +23,7 @@ import PressScale from '../src/components/PressScale';
 import VouchScoreRing from '../src/components/VouchScoreRing';
 import { workerService } from '../src/api/workerService';
 import { Colors, Glass } from '../src/theme';
+import AppIcon, { Icons, IconLabel } from '../src/components/AppIcon';
 
 import NotificationsScreen from './NotificationsScreen';
 import VoiceInterviewScreen from './VoiceInterviewScreen';
@@ -69,7 +70,7 @@ function SkillChip({ label, verified, active, onPress, accent }) {
           {label}
         </Text>
         {verified && (
-          <Text style={styles.chipCheckmark}> ✓</Text>
+          <AppIcon name={Icons.checkmarkSeal} size={14} color={Colors.verifiedBlue} style={{ marginLeft: 4 }} />
         )}
       </View>
     </PressScale>
@@ -82,7 +83,11 @@ function SkillChip({ label, verified, active, onPress, accent }) {
 function StatCol({ value, label, borderRight }) {
   return (
     <View style={[styles.statCol, borderRight && styles.statBorderRight]}>
-      <Text style={styles.statValue}>{value}</Text>
+      {typeof value === 'string' ? (
+        <Text style={styles.statValue}>{value}</Text>
+      ) : (
+        value
+      )}
       <Text style={styles.statLabel}>{label}</Text>
     </View>
   );
@@ -91,10 +96,14 @@ function StatCol({ value, label, borderRight }) {
 // ---------------------------------------------------------------------------
 // Tab bar item
 // ---------------------------------------------------------------------------
-function TabItem({ emoji, label, active, accent, onPress }) {
+function TabItem({ icon, label, active, accent, onPress }) {
   return (
     <TouchableOpacity style={styles.tabItem} onPress={onPress} activeOpacity={0.75}>
-      <Text style={[styles.tabEmoji, { color: active ? accent : 'rgba(39,41,50,0.35)' }]}>{emoji}</Text>
+      <AppIcon
+        name={icon}
+        size={22}
+        color={active ? accent : 'rgba(39,41,50,0.35)'}
+      />
       <Text style={[styles.tabLabel, { color: active ? accent : Colors.dimText }]}>{label}</Text>
     </TouchableOpacity>
   );
@@ -232,7 +241,7 @@ export default function ProfileScreen({
               <Text style={styles.headerLogo}>sthapna.ai</Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
                 <PressScale onPress={() => setShowNotifications(true)} style={styles.notifBtn}>
-                  <Text style={styles.notifIcon}>🔔</Text>
+                  <AppIcon name={Icons.bell} size={22} color={Colors.shadowGrey} />
                   {unreadCount > 0 && (
                     <View style={[styles.notifBadge, { backgroundColor: accent }]}>
                       <Text style={styles.notifBadgeText}>{unreadCount}</Text>
@@ -268,13 +277,16 @@ export default function ProfileScreen({
                   <Text style={styles.nameText} numberOfLines={1}>{displayName}</Text>
                   {worker?.isVerified && (
                     <View style={[styles.verifiedBadge, { backgroundColor: Colors.verifiedBlue }]}>
-                      <Text style={styles.verifiedCheck}>✓</Text>
+                      <AppIcon name={Icons.checkmark} size={12} color="#fff" />
                     </View>
                   )}
                 </View>
                 <Text style={styles.tradeText}>{displayTrade}</Text>
                 <View style={styles.availRow}>
-                  <Text style={styles.locationText}>📍 {displayLocation}</Text>
+                  <View style={styles.locationRow}>
+                    <AppIcon name={Icons.location} size={13} color={Colors.mutedText} />
+                    <Text style={styles.locationText}>{displayLocation}</Text>
+                  </View>
                   <Text style={[styles.availLabel, { color: accent }]}>● {t('Available', 'उपलब्ध')}</Text>
                 </View>
               </View>
@@ -292,7 +304,15 @@ export default function ProfileScreen({
             <View style={styles.statDivider} />
             <View style={styles.statRow}>
               <StatCol value={displayJobs} label={t('Jobs', 'काम')} borderRight />
-              <StatCol value={`${displayRating}★`} label={t('Rating', 'रेटिंग')} />
+              <StatCol
+                value={(
+                  <View style={styles.statRatingRow}>
+                    <Text style={styles.statValue}>{displayRating}</Text>
+                    <AppIcon name={Icons.starFill} size={16} color="#F4A261" />
+                  </View>
+                )}
+                label={t('Rating', 'रेटिंग')}
+              />
             </View>
           </GlassCard>
 
@@ -322,7 +342,10 @@ export default function ProfileScreen({
               <View style={styles.workHistoryList}>
                 {workHistory.length === 0 ? (
                   <Text style={styles.emptyHistoryText}>
-                    {t("No work history yet. Add roles you've worked to build trust.", "अभी कोई कार्य इतिहास नहीं। भरोसा बनाने के लिए अपनी भूमिकाएँ जोड़ें।")}
+                    {t(
+                      "No work history yet. Add roles you've worked to build trust.",
+                      'अभी कोई कार्य इतिहास नहीं। भरोसा बनाने के लिए अपनी भूमिकाएँ जोड़ें।',
+                    )}
                   </Text>
                 ) : (
                   workHistory.map((dto, idx) => (
@@ -353,7 +376,9 @@ export default function ProfileScreen({
 
           {/* Showcase Work Button */}
           <PressScale onPress={() => setShowProofOfWork(true)} style={styles.showcaseBtn}>
-            <Text style={styles.showcaseBtnText}>▶ {t('Showcase Work', 'अपना काम दिखाएँ')}</Text>
+            <IconLabel icon="play" size={18} color="#fff" textStyle={styles.showcaseBtnText}>
+              {t('Showcase Work', 'अपना काम दिखाएँ')}
+            </IconLabel>
           </PressScale>
 
           {/* Actions */}
@@ -366,39 +391,49 @@ export default function ProfileScreen({
               <View style={styles.actionsGrid}>
                 <View style={{ flexDirection: 'row', gap: 10 }}>
                   <PressScale style={styles.actionBtnOutline}>
-                    <Text style={[styles.actionBtnText, { color: Colors.shadowGrey }]}>📝 {t('Edit Profile', 'प्रोफ़ाइल संपादित करें')}</Text>
+                    <IconLabel icon="create-outline" size={18} color={Colors.shadowGrey} textStyle={[styles.actionBtnText, { color: Colors.shadowGrey }]}>
+                      {t('Edit Profile', 'प्रोफ़ाइल संपादित करें')}
+                    </IconLabel>
                   </PressScale>
                   <PressScale style={[styles.actionBtnFilled, { backgroundColor: accent }]}>
-                    <Text style={[styles.actionBtnText, { color: '#fff' }]}>↗️ {t('Share', 'शेयर करें')}</Text>
+                    <IconLabel icon={Icons.share} size={18} color="#fff" textStyle={[styles.actionBtnText, { color: '#fff' }]}>
+                      {t('Share', 'शेयर करें')}
+                    </IconLabel>
                   </PressScale>
                 </View>
                 <PressScale onPress={() => setShowVoiceInterview(true)} style={[styles.actionBtnOutline, { borderColor: 'rgba(59,130,246,0.3)' }]}>
-                  <Text style={[styles.actionBtnText, { color: Colors.verifiedBlue }]}>🎙️ {t('Practice AI Interview', 'AI इंटरव्यू अभ्यास')}</Text>
+                  <IconLabel icon={Icons.interview} size={18} color={Colors.verifiedBlue} textStyle={[styles.actionBtnText, { color: Colors.verifiedBlue }]}>
+                    {t('Practice AI Interview', 'AI इंटरव्यू अभ्यास')}
+                  </IconLabel>
                 </PressScale>
                 <PressScale onPress={() => setShowProofOfWork(true)} style={styles.actionBtnOutline}>
-                  <Text style={[styles.actionBtnText, { color: Colors.shadowGrey }]}>🎬 {t('Add Proof of Work', 'काम का सबूत जोड़ें')}</Text>
+                  <IconLabel icon={Icons.proof} size={18} color={Colors.shadowGrey} textStyle={[styles.actionBtnText, { color: Colors.shadowGrey }]}>
+                    {t('Add Proof of Work', 'काम का सबूत जोड़ें')}
+                  </IconLabel>
                 </PressScale>
               </View>
             ) : (
               <View style={styles.actionsGrid}>
                 <PressScale onPress={requestHire} style={[styles.actionBtnFilled, { backgroundColor: accent }]}>
-                  <Text style={[styles.actionBtnText, { color: '#fff' }]}>⚡ {t('Hire Now', 'अभी काम दें')}</Text>
+                  <IconLabel icon={Icons.hire} size={18} color="#fff" textStyle={[styles.actionBtnText, { color: '#fff' }]}>
+                    {t('Hire Now', 'अभी काम दें')}
+                  </IconLabel>
                 </PressScale>
                 <View style={{ flexDirection: 'row', gap: 10 }}>
                   <PressScale onPress={() => { if (worker?.phone) Linking.openURL(`tel:${worker.phone}`) }} style={styles.actionBtnOutlineFlex}>
-                    <Text style={[styles.actionBtnTextSmall, { color: Colors.shadowGrey }]}>📞</Text>
+                    <AppIcon name="call" size={20} color={Colors.shadowGrey} />
                     <Text style={[styles.actionBtnTextSmall, { color: Colors.shadowGrey }]}>{t('Call', 'कॉल करें')}</Text>
                   </PressScale>
                   <PressScale onPress={() => { if (worker?.phone) Linking.openURL(`https://wa.me/${worker.phone.replace(/\D/g, '')}`) }} style={[styles.actionBtnOutlineFlex, { borderColor: 'rgba(37,211,102,0.25)' }]}>
-                    <Text style={[styles.actionBtnTextSmall, { color: '#25D366' }]}>💬</Text>
+                    <AppIcon name={Icons.whatsapp} size={20} color="#25D366" />
                     <Text style={[styles.actionBtnTextSmall, { color: '#25D366' }]}>{t('WhatsApp', 'WhatsApp')}</Text>
                   </PressScale>
                   <PressScale onPress={() => setShowGiveVouch(true)} style={[styles.actionBtnOutlineFlex, { borderColor: 'rgba(59,130,246,0.25)' }]}>
-                    <Text style={[styles.actionBtnTextSmall, { color: Colors.verifiedBlue }]}>🤝</Text>
+                    <AppIcon name={Icons.vouchFill} size={20} color={Colors.verifiedBlue} />
                     <Text style={[styles.actionBtnTextSmall, { color: Colors.verifiedBlue }]}>{t('Vouch', 'Vouch करें')}</Text>
                   </PressScale>
                   <PressScale onPress={toggleSave} style={styles.actionBtnOutlineFlex}>
-                    <Text style={[styles.actionBtnTextSmall, { color: Colors.shadowGrey }]}>{isSaved ? '🔖' : '📑'}</Text>
+                    <AppIcon name={isSaved ? Icons.bookmarkFill : Icons.bookmark} size={20} color={Colors.shadowGrey} />
                     <Text style={[styles.actionBtnTextSmall, { color: Colors.shadowGrey }]}>{isSaved ? t('Saved', 'सेव हो गया') : t('Save', 'सेव करें')}</Text>
                   </PressScale>
                 </View>
@@ -411,13 +446,13 @@ export default function ProfileScreen({
       {/* Floating Liquid Glass Tab Bar (Glass #2) */}
       <View style={[styles.tabBarContainer, { bottom: Math.max(insets.bottom, 20) }]}>
         <GlassCard style={styles.tabBar}>
-          <TabItem idx={1} emoji="🏠" label={t('Home', 'होम')} />
-          <TabItem idx={2} emoji="🔍" label={t('Explore', 'खोजें')} onPress={onExplore} />
+          <TabItem icon={Icons.home} label={t('Home', 'होम')} />
+          <TabItem icon={Icons.explore} label={t('Explore', 'खोजें')} onPress={onExplore} />
           <PressScale onPress={() => setShowAddSheet(true)} style={[styles.addBtn, { backgroundColor: accent }]}>
-            <Text style={styles.addBtnText}>+</Text>
+            <AppIcon name={Icons.plus} size={26} color="#fff" />
           </PressScale>
-          <TabItem idx={0} emoji="👤" label={t('Profile', 'प्रोफ़ाइल')} active={isSelf} accent={accent} />
-          <TabItem idx={4} emoji="⚙️" label={t('Settings', 'सेटिंग्स')} onPress={() => setShowSettings(true)} />
+          <TabItem icon={Icons.profile} label={t('Profile', 'प्रोफ़ाइल')} active={isSelf} accent={accent} />
+          <TabItem icon={Icons.settings} label={t('Settings', 'सेटिंग्स')} onPress={() => setShowSettings(true)} />
         </GlassCard>
       </View>
 
@@ -559,7 +594,9 @@ const styles = StyleSheet.create({
   verifiedCheck: { fontSize: 10, fontWeight: 'bold', color: '#fff' },
   tradeText: { fontSize: 14, color: Colors.mutedText, marginBottom: 4 },
   availRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  locationRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   locationText: { fontSize: 12, color: Colors.dimText },
+  statRatingRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   availLabel: { fontSize: 12, fontWeight: 'bold' },
   statDivider: { height: 1, backgroundColor: 'rgba(39,41,50,0.1)' },
   statRow: { flexDirection: 'row', paddingTop: 16 },

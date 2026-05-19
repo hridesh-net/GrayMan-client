@@ -56,9 +56,12 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Add proof-of-work photos to your profile."
+          "photosPermission": "Add proof-of-work photos to your profile.",
+          "cameraPermission": "Take proof-of-work photos on site."
         }
-      ]
+      ],
+      "expo-audio",
+      "expo-video"
     ],
     "web": {
       "favicon": "./assets/favicon.png"

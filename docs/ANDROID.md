@@ -41,7 +41,8 @@ npx expo start --android
 | AI interview | WebSocket `/interview/ws` |
 | Notifications | `GET /notifications`, accept/reject |
 | Hires | `POST /hires` |
-| Showcase | `GET /workers/{id}/showcase` |
+| Showcase photos | `GET/POST /workers/{id}/showcase`, `POST /showcase/upload-url` |
+| Time-lapse compile | `POST /workers/me/showcase/timelapse/build`, `GET .../timelapse/{job_id}` |
 
 ## Auth storage
 

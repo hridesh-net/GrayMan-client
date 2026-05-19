@@ -12,6 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 
 import { useTheme } from '../src/AppTheme';
+import { tpl } from '../src/i18n';
 import Blobs from '../src/components/Blobs';
 import PressScale from '../src/components/PressScale';
 import { workerService } from '../src/api/workerService';
@@ -89,7 +90,7 @@ export default function NameEntryScreen({ goBack, goNext }) {
               <View style={styles.feedbackRow}>
                 <View style={[styles.feedbackDot, { backgroundColor: accent }]} />
                 <Text style={[styles.feedbackText, { color: accent }]}>
-                  {t(`Looks great, ${firstName}!`, `बहुत अच्छा, ${firstName}!`)}
+                  {tpl(t, 'Looks great, {name}!', 'बहुत अच्छा, {name}!', { name: firstName })}
                 </Text>
               </View>
             )}

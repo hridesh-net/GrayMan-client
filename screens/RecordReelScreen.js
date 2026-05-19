@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,7 +7,6 @@ import {
   Animated,
   Linking,
   ActivityIndicator,
-  Alert,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -19,6 +18,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 
 import { useTheme } from '../src/AppTheme';
+import { tpl } from '../src/i18n';
 import PressScale from '../src/components/PressScale';
 import { uploadReel } from '../src/services/reelUploader';
 import { Colors } from '../src/theme';
@@ -39,6 +39,7 @@ export default function RecordReelScreen({ goBack, goDone }) {
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [micPermission, requestMicPermission] = useMicrophonePermissions();
   const [permissionsChecked, setPermissionsChecked] = useState(false);
+  const [cameraReady, setCameraReady] = useState(false);
 
   const [phase, setPhase] = useState('idle'); // 'idle' | 'recording' | 'done' | 'failed'
   const [elapsed, setElapsed] = useState(0);
@@ -49,8 +50,6 @@ export default function RecordReelScreen({ goBack, goDone }) {
   const cameraRef = useRef(null);
   const recordingPromiseRef = useRef(null);
   const timerRef = useRef(null);
-
-  // Use Animated.Value for progress bar
   const progressAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -64,6 +63,15 @@ export default function RecordReelScreen({ goBack, goDone }) {
       setPermissionsChecked(true);
     })();
   }, []);
+
+  const stopRecording = useCallback(() => {
+    try {
+      cameraRef.current?.stopRecording();
+    } catch {
+      setUploadError(t('Failed to stop recording', 'रिकॉर्डिंग रोकने में विफल'));
+      setPhase('failed');
+    }
+  }, [t]);
 
   useEffect(() => {
     if (phase === 'recording') {
@@ -86,63 +94,42 @@ export default function RecordReelScreen({ goBack, goDone }) {
       clearInterval(timerRef.current);
     }
     return () => clearInterval(timerRef.current);
-  }, [phase]);
+  }, [phase, progressAnim, stopRecording]);
 
   const permissionsGranted = cameraPermission?.granted && micPermission?.granted;
+  const canRecord = permissionsGranted && cameraReady;
 
-  // Real video recording via expo-camera v15+ — captures a single
-  // MP4 (H.264 + AAC) with rotation baked into pixels by the camera
-  // service itself. The previous implementation used expo-av's
-  // Audio.Recording, which records ONLY audio (M4A/AAC); the resulting
-  // file was uploaded as 'video/mp4' but had no video stream, so the
-  // server's HLS transcode produced variants with audio-only — exactly
-  // why playback showed sound with a blank screen.
   const startRecording = async () => {
+    if (!cameraRef.current || !canRecord || phase === 'recording' || phase === 'done') return;
     setUploadError(null);
-    if (!cameraRef.current) {
-      setUploadError('Camera not ready');
-      setPhase('failed');
-      return;
-    }
-    setElapsed(0);
-    progressAnim.setValue(0);
-    setPhase('recording');
-
+    setRecordingUri(null);
     try {
-      // recordAsync returns a promise that resolves when stopRecording()
-      // is called (or maxDuration elapses on its own).
+      setElapsed(0);
+      progressAnim.setValue(0);
+      setPhase('recording');
+
       const promise = cameraRef.current.recordAsync({
         maxDuration: MAX_DURATION,
       });
       recordingPromiseRef.current = promise;
-      const result = await promise;
-      if (result?.uri) {
-        setRecordingUri(result.uri);
+
+      const video = await promise;
+      recordingPromiseRef.current = null;
+      if (video?.uri) {
+        setRecordingUri(video.uri);
         setPhase('done');
       } else {
-        setUploadError('Recording produced no file');
-        setPhase('failed');
+        throw new Error('No video URI');
       }
-    } catch (err) {
-      setUploadError(`Recording failed: ${err.message || err}`);
-      setPhase('failed');
-    } finally {
+    } catch {
       recordingPromiseRef.current = null;
-    }
-  };
-
-  const stopRecording = async () => {
-    try {
-      if (cameraRef.current) {
-        await cameraRef.current.stopRecording();
-      }
-    } catch (err) {
-      setUploadError('Failed to stop recording');
+      setUploadError(t('Failed to record reel', 'रील रिकॉर्ड करने में विफल'));
       setPhase('failed');
     }
   };
 
   const handleReRecord = () => {
+    recordingPromiseRef.current = null;
     setRecordingUri(null);
     setElapsed(0);
     progressAnim.setValue(0);
@@ -155,10 +142,11 @@ export default function RecordReelScreen({ goBack, goDone }) {
     setUploading(true);
     setUploadError(null);
     try {
+      // Transcript: on-device STT not wired on RN yet (iOS uses ReelTranscriber).
       await uploadReel(recordingUri, null, () => {});
       goDone(recordingUri);
     } catch (err) {
-      setUploadError(err.message || 'Upload failed');
+      setUploadError(err.message || t('Upload failed', 'अपलोड विफल'));
     } finally {
       setUploading(false);
     }
@@ -170,8 +158,8 @@ export default function RecordReelScreen({ goBack, goDone }) {
   const statusLabel = () => {
     switch (phase) {
       case 'idle': return t('Ready to record', 'रिकॉर्ड करने के लिए तैयार');
-      case 'recording': return t(`${elapsed}s recorded…`, `${elapsed}s रिकॉर्ड हो गया…`);
-      case 'done': return t(`${elapsed}s recorded`, `${elapsed}s रिकॉर्ड हो गया`);
+      case 'recording': return `${elapsed}s ${t('seconds recorded…', 'रिकॉर्ड हो रहा है…')}`;
+      case 'done': return `${elapsed}s ${t('seconds recorded', 'रिकॉर्ड हो गया')}`;
       case 'failed': return t('Tap to retry', 'पुनः प्रयास करें');
       default: return '';
     }
@@ -190,7 +178,6 @@ export default function RecordReelScreen({ goBack, goDone }) {
     <View style={styles.root}>
       <StatusBar style="light" />
 
-      {/* Viewfinder Area */}
       <View style={styles.viewfinder}>
         {permissionsGranted ? (
           <CameraView
@@ -199,6 +186,7 @@ export default function RecordReelScreen({ goBack, goDone }) {
             facing="front"
             mode="video"
             videoQuality="720p"
+            onCameraReady={() => setCameraReady(true)}
           />
         ) : (
           <View style={[StyleSheet.absoluteFill, { backgroundColor: Colors.shadowGrey, alignItems: 'center', justifyContent: 'center', padding: 24 }]}>
@@ -224,7 +212,6 @@ export default function RecordReelScreen({ goBack, goDone }) {
         />
 
         <SafeAreaView edges={['top']} style={styles.viewfinderContent}>
-          {/* Top Bar */}
           <View style={styles.topBar}>
             <TouchableOpacity onPress={goBack} style={styles.backBtn} activeOpacity={0.8}>
               <Text style={styles.backArrow}>←</Text>
@@ -283,7 +270,7 @@ export default function RecordReelScreen({ goBack, goDone }) {
                 <Text style={styles.doneIcon}>✓</Text>
                 <Text style={styles.doneTitle}>{t('Reel recorded!', 'रील रिकॉर्ड हो गया!')}</Text>
                 <Text style={styles.doneSub}>
-                  {t(`${elapsed}s · ready to submit`, `${elapsed}s · सबमिट के लिए तैयार`)}
+                  {`${elapsed}s · ${t('ready to submit', 'सबमिट के लिए तैयार')}`}
                 </Text>
               </View>
             )}
@@ -291,7 +278,6 @@ export default function RecordReelScreen({ goBack, goDone }) {
         </SafeAreaView>
       </View>
 
-      {/* Controls Sheet */}
       <View style={[styles.controlsSheet, { paddingBottom: Math.max(insets.bottom, 36) }]}>
         <View style={styles.progressBarBg}>
           <Animated.View
@@ -301,9 +287,9 @@ export default function RecordReelScreen({ goBack, goDone }) {
                 backgroundColor: accent,
                 width: progressAnim.interpolate({
                   inputRange: [0, 1],
-                  outputRange: ['0%', '100%']
-                })
-              }
+                  outputRange: ['0%', '100%'],
+                }),
+              },
             ]}
           />
         </View>
@@ -321,10 +307,10 @@ export default function RecordReelScreen({ goBack, goDone }) {
           {(phase === 'idle' || phase === 'failed') && (
             <PressScale
               onPress={startRecording}
-              disabled={!permissionsGranted}
+              disabled={!canRecord}
               style={[
                 styles.primaryBtn,
-                { backgroundColor: permissionsGranted ? accent : 'rgba(255,255,255,0.4)' }
+                { backgroundColor: canRecord ? accent : 'rgba(255,255,255,0.4)' },
               ]}
             >
               <Text style={styles.primaryBtnText}>● {t('Start Recording', 'रिकॉर्डिंग शुरू करें')}</Text>
@@ -421,8 +407,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  
-  // Idle State
+
   idleState: { alignItems: 'center', width: '100%' },
   tipsHeader: { fontSize: 14, fontWeight: '500', color: 'rgba(255,255,255,0.5)', marginTop: 28, marginBottom: 12 },
   tipsList: { width: '100%' },
@@ -430,18 +415,15 @@ const styles = StyleSheet.create({
   tipDot: { width: 6, height: 6, borderRadius: 3, marginRight: 10, opacity: 0.7 },
   tipText: { fontSize: 14, color: 'rgba(255,255,255,0.7)' },
 
-  // Recording State
   recordingState: { alignItems: 'center' },
   timerLarge: { fontSize: 56, fontWeight: '900', color: '#fff', letterSpacing: -2.5, marginTop: 20 },
   timerSub: { fontSize: 13, color: 'rgba(255,255,255,0.5)', marginTop: 6 },
 
-  // Done State
   doneState: { alignItems: 'center' },
   doneIcon: { fontSize: 48, color: '#fff', marginBottom: 4 },
   doneTitle: { fontSize: 20, fontWeight: '900', color: '#fff', letterSpacing: -0.6 },
   doneSub: { fontSize: 13, color: 'rgba(255,255,255,0.55)', marginTop: 6 },
 
-  // Controls Sheet
   controlsSheet: {
     backgroundColor: Colors.canvas,
     borderTopLeftRadius: 28,
