@@ -4,7 +4,7 @@
  */
 export const APIConfig = {
   // baseURL: 'http://192.168.1.38:8000/api/v1',
-  baseURL: 'http://192.168.0.14:8000/api/v1',
+  baseURL: 'http://192.168.1.26:8000/api/v1',
   defaultLat: 19.0760,
   defaultLng: 72.8777,
 };

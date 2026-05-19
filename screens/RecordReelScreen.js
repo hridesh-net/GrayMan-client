@@ -185,6 +185,7 @@ export default function RecordReelScreen({ goBack, goDone }) {
             style={StyleSheet.absoluteFill}
             facing="front"
             mode="video"
+            videoQuality="720p"
             onCameraReady={() => setCameraReady(true)}
           />
         ) : (
